@@ -99,7 +99,7 @@ if modulo_attivo == labels[0]:
         {"Lunghezza Pezzo (mm)": 1200, "Quantità Richiesta": 5},
         {"Lunghezza Pezzo (mm)": 850, "Quantità Richiesta": 8}
     ])
-    tabella_cut = st.data_editor(df_cut, num_rows="dynamic", key=\"cut_b\", use_container_width=True)
+    tabella_cut = st.data_editor(df_cut, num_rows="dynamic", key="cut_b", use_container_width=True)
     
     if st.button("🚀 Calcola Ottimizzazione Barre", type="primary"):
         reqs = []
@@ -108,7 +108,7 @@ if modulo_attivo == labels[0]:
             if pd.notnull(lp) and pd.notnull(qr): reqs.extend([int(lp)] * int(qr))
         reqs.sort(reverse=True)
         
-        st.success(f"Logica 1D Pronta al calcolo su Replit per {len(reqs)} pezzi.")
+        st.success(f"Logica 1D Pronta al calcolo per {len(reqs)} pezzi.")
 # =============================================================================
 # MODULO 2: OPTIMIZATION 2D (TAGLIO LAMIERE / PANTOGRAFO DRAFTSIGHT)
 # =============================================================================
@@ -152,7 +152,7 @@ elif modulo_attivo == labels[1]:
                 return affinity.translate(poly, xoff=-mx, yoff=-my)
             return None
         except: return None
-    st.markdown(f'<h3>📥 {labels[10]}</h3>', unsafe_allow_html=True)
+       st.markdown(f'<h3>📥 {labels[10]}</h3>', unsafe_allow_html=True)
     file_caricati = st.file_uploader("Scegli file", type=["dxf"], accept_multiple_files=True, label_visibility="collapsed")
     lista_particolari = []
 
@@ -222,9 +222,9 @@ elif modulo_attivo == labels[1]:
             if piazzati:
                 _, _, max_x, _ = unary_union(piazzati).bounds
                 x_sfrido_start = max_x + offset_totale
-                if W_lamiera - x_sfrido_start >= 100: # Se avanzano almeno 100mm di striscia utile
+                if W_lamiera - x_sfrido_start >= 100:
                     w_sfrido = W_lamiera - x_sfrido_start
-                    st.info(f"✨ {labels[15]}: Rilevato spezzone di recupero utile di {round(w_sfrido)} x {H_lamiera} mm.")
+                    st.info(f"✨ SPEZZONE RECUPERABILE: Rilevato ritaglio utile di {round(w_sfrido)} x {H_lamiera} mm.")
                     if st.button(labels[16]):
                         st.session_state.magazzino_sfridi_2d.append({"id": f"SFR-{num_ordine}", "w": w_sfrido, "h": H_lamiera})
-                        st.success("Sfrido registrato in archivio!")
+                        st.success("Sfrido registrato con successo nel database!")
