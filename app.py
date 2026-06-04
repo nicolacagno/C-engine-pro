@@ -174,19 +174,29 @@ file_caricati = st.file_uploader(L["carica_input"], type=["dxf"], accept_multipl
 lista_particolari = []
 
 if file_caricati:
-    st.write(L["qta_titolo"])
-    for f in file_caricati:
-        poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
-        if poly:
-            mx, my, xx, yx = poly.bounds
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write(f"📄 **{f.name}**")
-                st.caption(f"Dimensione reale: {round(xx-mx)} x {round(yx-my)} mm")
-            with col2:
-                # ETICHETTA DI DIALOGO COMPLETA E CAMPO QUANTITÀ DEFINITO
-                qta = st.number_input(f"{L['qta_label']} {f.name}", min_value=1, value=10, key=f"q_{f.name}")
-            lista_particolari.append({"nome": f.name.replace(".dxf", ""), "poly": poly, "qta": int(qta), "area": poly.area})
+    # Contenitore ad alto contrasto per l'area delle quantità
+    with st.container():
+        st.markdown(f'<div style="background-color:#111111; padding:20px; border-radius:8px; border:2px solid #FF4B4B; margin-bottom:20px;"><h4>{L["qta_titolo"]}</h4>', unsafe_allow_html=True)
+        
+        for f in file_caricati:
+            poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
+            if poly:
+                mx, my, xx, yx = poly.bounds
+                
+                # Creazione di 3 colonne pulite per distanziare il testo dal campo numerico
+                col_file, col_dim, col_input = st.columns([3, 2, 2])
+                
+                with col_file:
+                    st.markdown(f'<p style="color:#00FFCD !important; font-weight:bold; margin-top:10px;">📄 {f.name}</p>', unsafe_allow_html=True)
+                with col_dim:
+                    st.markdown(f'<p style="color:#FFFFFF !important; margin-top:10px;">📐 {round(xx-mx)} x {round(yx-my)} mm</p>', unsafe_allow_html=True)
+                with col_input:
+                    # Input numerico con chiave univoca e testo forzato
+                    qta = st.number_input(f"Pezzi: {f.name[:10]}...", min_value=1, value=5, key=f"q_{f.name}", label_visibility="collapsed")
+                
+                lista_particolari.append({"nome": f.name.replace(".dxf", ""), "poly": poly, "qta": int(qta), "area": poly.area})
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
 if st.button(L["btn_calcola"], type="primary"):
     if not lista_particolari: 
@@ -207,6 +217,8 @@ if st.button(L["btn_calcola"], type="primary"):
         
         piazzati, report = [], []
         area_usata = 0
+        
+        # Generazione grafico proporzionato
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.set_facecolor('#151515')
         fig.patch.set_facecolor('#111111')
