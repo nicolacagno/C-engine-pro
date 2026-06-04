@@ -220,26 +220,22 @@ st.markdown('</div>', unsafe_allow_html=True)
 lista_particolari = []
 
 if file_caricati:
-    # Contenitore principale scuro con bordo rosso per un contrasto perfetto
     st.markdown(f'<div style="background-color:#111111; padding:20px; border-radius:8px; border:2px solid #FF4B4B; margin-bottom:20px;"><h3 style="color:#FFFFFF !important; margin-top:0;">{Txt}</h3><div style="margin-top:15px;">', unsafe_allow_html=True)
     
     for f in file_caricati:
         poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
         
-        # Rilevamento delle dimensioni reali del pezzo
         if poly:
             mx, my, xx, yx = poly.bounds
             w_p, h_p = xx-mx, yx-my
             is_fallback = False
         else:
-            # Fallback intelligente se il DXF ha errori, ma impostato sulle tue misure tipiche (90x80)
             poly = Polygon([(0,0), (90,0), (90,80), (0,80)])
             w_p, h_p = 90.0, 80.0
             is_fallback = True
             
-        col1, col2 = st.columns()
+        col1, col2 = st.columns(2)
         with col1:
-            # FORZATURA TESTO BIANCO PURO E AZZURRO TECNICO
             st.markdown(f'<span style="color:#FFFFFF !important; font-weight:bold; font-size:16px; font-family:monospace;">📄 {f.name}</span>', unsafe_allow_html=True)
             tipo_geometria = "fallback" if is_fallback else "polygon"
             st.markdown(f'<br><span style="color:#38BDF8 !important; font-size:14px; font-family:monospace;">Dimensione: {round(w_p)} x {round(h_p)} mm · {tipo_geometria}</span>', unsafe_allow_html=True)
@@ -260,22 +256,14 @@ if st.button(Txt, type="primary"):
                 coda.append({"nome": p["nome"], "poly": p["poly"], "area": p["area"]})
         coda.sort(key=lambda x: x["area"], reverse=True)
         
-        bordo_utile = Polygon([
-            (offset_totale, offset_totale), 
-            (W_lamiera - offset_totale, offset_totale), 
-            (W_lamiera - offset_totale, H_lamiera - offset_totale), 
-            (offset_totale, H_lamiera - offset_totale)
-        ])
-        
+        bordo_utile = Polygon([(offset_totale, offset_totale), (W_lamiera - offset_totale, offset_totale), (W_lamiera - offset_totale, H_lamiera - offset_totale), (offset_totale, H_lamiera - offset_totale)])
         piazzati, report = [], []
         area_usata = 0
         
         fig, ax = plt.subplots(figsize=(10, 10))
-        ax.set_facecolor('#0F172A') # Sfondo grafico tecnico scuro ardesia
+        ax.set_facecolor('#0F172A')
         fig.patch.set_facecolor('#121214')
         ax.add_patch(plt.Rectangle((0, 0), W_lamiera, H_lamiera, fill=False, color="#FF4B4B", linewidth=3))
-        
-        # Griglia millimetrica ingegneristica di sfondo
         ax.grid(color='#334155', linestyle='--', linewidth=0.5, alpha=0.5)
         
         nomi_unici = list(set([i["nome"] for i in coda]))
@@ -286,9 +274,8 @@ if st.button(Txt, type="primary"):
             p_orig = item["poly"]
             ok = False
             
-            # ELENCO ROTAZIONI GEOMETRICHE DEFINITO
-            angoli_rotazione =
-            for ang in angoli_rotazione:
+            # ANGOLI INSERITI DIRETTAMENTE NELLA LOGICA DI CICLO (RISOLTO SYNTAX ERROR)
+            for ang in [0, 45, 90, 135, 180, 225, 270, 315]:
                 if ok: break
                 p_ruot = affinity.rotate(p_orig, ang, origin='center').buffer(offset_totale)
                 mnx, mny, _, _ = p_ruot.bounds
@@ -306,7 +293,6 @@ if st.button(Txt, type="primary"):
                                 ok = True
                                 x, y = p_real.exterior.xy
                                 
-                                # Rendering tecnico: colore di riempimento ad alta visibilità e bordo nero netto
                                 ax.fill(x, y, alpha=0.8, color=c_dict[item["nome"]], edgecolor='#000000', linewidth=1.5)
                                 ax.text(p_real.centroid.x, p_real.centroid.y, item["nome"][:8], color="black", fontsize=8, weight="bold", ha="center", va="center", bbox=dict(boxstyle='round,pad=0.1', fc='white', alpha=0.7, ec='none'))
                                 report.append({"Articolo": item["nome"], "Rotazione": f"{ang}°"})
