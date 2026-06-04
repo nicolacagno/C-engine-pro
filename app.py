@@ -9,41 +9,147 @@ from shapely.ops import unary_union
 from shapely import affinity
 import ezdxf
 
+# CONFIGURAZIONE INTERFACCIA PREMIUM FULL DARK (STILE CNC)
 st.set_page_config(page_title="C-Engine Pro", layout="wide")
 
-# FORZATURA GRAFICA: SFONDO SCURO DELLA SIDEBAR PER MASSIMO CONTRASTO
 st.markdown("""
     <style>
-    html, body, [data-testid="stWidgetLabel"], p, label, .stMarkdown, h1, h2, h3, h4, span { color: #FFFFFF !important; }
-    [data-testid="stSidebar"] { background-color: #1A1A1A !important; }
-    .stTextInput input, .stNumberInput input { color: #FFFFFF !important; background-color: #2D2D34 !important; }
-    .stButton>button { color: #FFFFFF !important; background-color: #FF4B4B !important; font-weight: bold; }
-    code { color: #00FF00 !important; background-color: #111111 !important; }
+    .stApp, html, body { background-color: #121214 !important; }
+    h1, h2, h3, h4, p, label, span, [data-testid="stWidgetLabel"], .stMarkdown { 
+        color: #E2E8F0 !important; 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+    }
+    [data-testid="stSidebar"] { 
+        background-color: #1A1A1E !important; 
+        border-right: 1px solid #2D2D34 !important;
+    }
+    .stTextInput input, .stNumberInput input { 
+        color: #FFFFFF !important; 
+        background-color: #1E1E24 !important; 
+        border: 1px solid #3F3F46 !important;
+        border-radius: 6px !important;
+    }
+    [data-testid="stFileUploader"] {
+        background-color: #1E1E24 !important;
+        border: 2px dashed #4B5563 !important;
+        border-radius: 8px !important;
+        padding: 10px !important;
+    }
+    .industrial-card {
+        background-color: #1A1A1E !important;
+        border: 1px solid #2D2D34 !important;
+        padding: 20px !important;
+        border-radius: 8px !important;
+        margin-bottom: 20px !important;
+    }
+    .stButton>button { 
+        color: #FFFFFF !important; 
+        background-color: #EC4899 !important; 
+        border: none !important;
+        border-radius: 6px !important;
+        padding: 0.6rem 2rem !important;
+        font-weight: bold !important;
+        width: 100% !important;
+        box-shadow: 0 4px 14px 0 rgba(236, 72, 153, 0.4) !important;
+    }
+    .stButton>button:hover { background-color: #D946EF !important; }
+    .stDataFrame, [data-testid="stTable"] { background-color: #1A1A1E !important; border: 1px solid #2D2D34 !important; }
     </style>
 """, unsafe_allow_html=True)
 
 TRADUZIONI = {
-    "IT": ["📐 MetalHub - Suite Officina", "📋 Dati Commessa", "Numero Ordine", "Nome Cliente", "Data", "Piano Taglio Lamiera", "⚙️ Dimensioni Lamiera (mm)", "Larghezza X (mm)", "Altezza Y (mm)", "🔧 Parametri Utensile", "Diametro Fresa (mm)", "Distanza Sicurezza (mm)", "Passo scansione (mm)", "1. Carica File (.DXF)", "Trascina i file DXF qui", "### Quantità di Produzione", "Quantità per", "🚀 Calcola Nesting Reale", "Carica un file DXF!", "Rendimento Lamiera", "Sfrido Totale", "📋 Pezzi Mappati", "💾 Esporta", "📥 Scarica CSV", "🖨️ Stampa PDF"],
-    "GB": ["📐 MetalHub - Workshop Suite", "📋 Job Data", "Order Number", "Customer Name", "Date", "Sheet Cut Plan", "⚙️ Sheet Dimensions (mm)", "Width X (mm)", "Height Y (mm)", "🔧 Tool Parameters", "Cutter Diam. (mm)", "Safety Distance (mm)", "Scan Step (mm)", "1. Upload Files (.DXF)", "Drag DXF files here", "### Production Quantities", "Quantity for", "🚀 Run Real Nesting", "Upload a valid DXF!", "Sheet Yield", "Total Scrap", "📋 Mapped Parts", "💾 Export", "📥 Download CSV", "🖨️ Print PDF"]
+    "IT": ["⚙️ MetalHub - Configurazione Commessa", "📋 Parametri Identificativi", "Codice Ordine / Commessa", "Anagrafica Cliente", "Data Elaborazione", "Dettaglio Commessa", "📊 Configurazione Formato Lamiera", "Lunghezza Lastra X (mm)", "Altezza Lastra Y (mm)", "🛠️ Parametri Macchina Utensile", "Diametro Utensile Fresa (mm)", "Distanza Sicurezza Pezzi (mm)", "Risoluzione Calcolo (mm)", "📥 1. Caricamento File Matrice (.DXF)", "Trascina qui i profili DXF da tagliare", "📦 2. Fabbisogno e Quantità di Produzione", "Quantità", "🚀 Elabora Nesting Geometrico Tetris", "Inserisci almeno un file CAD!", "Efficienza Lamiera", "Sfrido Generato", "📋 Report Posizionamento Nodi", "💾 Area Esportazione Dati", "Scarica Tabella (CSV)", "Stampa Scheda Officina (PDF)"],
+    "GB": ["⚙️ MetalHub - Job Configuration", "📋 Job Identification", "Order / Job Number", "Customer Name", "Processing Date", "Job Details", "📊 Sheet Format Settings", "Sheet Width X (mm)", "Sheet Height Y (mm)", "🛠️ Machine Tool Parameters", "Cutter Diameter / Kerf (mm)", "Safety Clearance (mm)", "Calculation Resolution (mm)", "📥 1. Upload Template Files (.DXF)", "Drag and drop your DXF files here", "📦 2. Production Volume & Quantities", "Quantity", "🚀 Run Geometric Interlock Nesting", "Please upload a valid CAD file!", "Material Yield", "Total Scrap", "📋 Node Placement Report", "💾 Data Export Center", "Download Table (CSV)", "Print Shop Sheet (PDF)"]
 }
+# PROSEGUIMENTO DIZIONARIO LINGUE (ESTRAZIONE ESPLICITA)
+TRADUZIONI["FR"] = [
+    "📐 MetalHub - Suite d'Atelier", "📋 Données Commande", "Numéro", 
+    "Client", "Date", "Plan Découpe", "⚙️ Dimensions Tôle (mm)", 
+    "Largeur X (mm)", "Hauteur Y (mm)", "🔧 Paramètres Outil", 
+    "Diamètre Fraise (mm)", "Distance Sécurité (mm)", "Pas Balayage (mm)", 
+    "1. Charger (.DXF)", "Glissez les fichiers DXF", "### Quantités", 
+    "Quantité pour", "🚀 Imbrication Réelle", "Charger un DXF!", 
+    "Rendement Tôle", "Total Déchets", "📋 Pièces Imbriquées", 
+    "💾 Exporter", "📥 CSV", "🖨️ PDF"
+]
+TRADUZIONI["DE"] = [
+    "📐 MetalHub - Werkstatt", "📋 Auftragsdaten", "Nummer", 
+    "Kunde", "Datum", "Schneideplan", "⚙️ Blechmaße (mm)", 
+    "Breite X (mm)", "Höhe Y (mm)", "🔧 Werkzeugparameter", 
+    "Fräser (mm)", "Sicherheitsabstand (mm)", "Scanschritt (mm)", 
+    "1. DXF Hochladen", "DXF-Dateien hierher", "### Mengen", 
+    "Menge für", "🚀 Nesting Berechnen", "DXF hochladen!", 
+    "Blechausbeute", "Ausschuss", "📋 Teileliste", 
+    "💾 Export", "📥 CSV", "🖨️ PDF"
+]
+TRADUZIONI["ES"] = [
+    "📐 MetalHub - Suite de Taller", "📋 Datos Orden", "Número", 
+    "Cliente", "Fecha", "Plan de Corte", "⚙️ Dimensiones Chapa (mm)", 
+    "Ancho X (mm)", "Alto Y (mm)", "🔧 Parámetros", 
+    "Diámetro Fresa (mm)", "Distancia Seg. (mm)", "Paso Escaneo (mm)", 
+    "1. Cargar (.DXF)", "Arrastre los DXF aquí", "### Cantidades", 
+    "Cantidad para", "🚀 Nesting Real", "¡Cargue un DXF!", 
+    "Rendimento Chapa", "Chatarra Total", "📋 Piezas Mapeadas", 
+    "💾 Exportar", "📥 CSV", "🖨️ PDF"
+]
+TRADUZIONI["CZ"] = [
+    "📐 MetalHub - Dílna", "📋 Údaje Zakázky", "Číslo", 
+    "Zákazník", "Datum", "Plán Řezání", "⚙️ Rozměry Plechu (mm)", 
+    "Šířka X (mm)", "Výška Y (mm)", "🔧 Nástroj", 
+    "Průměr Frézy (mm)", "Bezpečnost (mm)", "Krok (mm)", 
+    "1. Načíst (.DXF)", "Sem přetáhněte DXF", "### Množství", 
+    "Množství pro", "🚀 Spustit Skládání", "Načtěte DXF!", 
+    "Výtěžnost Plechu", "Celkový Odpad", "📋 Umístěné Díly", 
+    "💾 Export", "📥 CSV", "🖨️ PDF"
+]
+TRADUZIONI["HU"] = [
+    "📐 MetalHub - Műhely", "📋 Rendelés", "Szám", 
+    "Ügyfél", "Dátum", "Vágási Terv", "⚙️ Lemezméretek (mm)", 
+    "Szélesség X (mm)", "Magasság Y (mm)", "🔧 Szerszám", 
+    "Maró (mm)", "Biztonság (mm)", "Lépés (mm)", 
+    "1. DXF Feltöltés", "Húzza ide a DXF-et", "### Mennyiségek", 
+    "Mennyiség ehhez:", "🚀 Beágyazás Indítása", "Töltsön fel DXF-et!", 
+    "Lemezkihasználás", "Hulladék", "📋 Alkatrészek", 
+    "💾 Export", "📥 CSV", "🖨️ PDF"
+]
+TRADUZIONI["RO"] = [
+    "📐 MetalHub - Atelier", "📋 Date Comandă", "Număr", 
+    "Client", "Dată", "Plan Tăiere", "⚙️ Dimensiuni Tablă (mm)", 
+    "Lățime X (mm)", "Înălțime Y (mm)", "🔧 Parametri Sculă", 
+    "Diametru Freză (mm)", "Siguranță (mm)", "Pas Scanare (mm)", 
+    "1. Încărcare (.DXF)", "Trageți DXF aici", "### Cantități", 
+    "Cantitate pentru", "🚀 Imbricare Reală", "Încărcați DXF!", 
+    "Randament Tablă", "Deșeu Total", "📋 Piese Imbricate", 
+    "💾 Export", "📥 CSV", "🖨️ PDF"
+]
+TRADUZIONI["PT"] = [
+    "📐 MetalHub - Oficina", "📋 Dados Pedido", "Número", 
+    "Cliente", "Data", "Plano Corte", "⚙️ Dimensões Chapa (mm)", 
+    "Largura X (mm)", "Altura Y (mm)", "🔧 Ferramenta", 
+    "Diâmetro Fresa (mm)", "Segurança (mm)", "Passo (mm)", 
+    "1. Carregar (.DXF)", "Arraste os DXF aqui", "### Quantidades", 
+    "Quantidade para", "🚀 Nesting Real", "Carregue um DXF!", 
+    "Rendimento Chapa", "Sucata Total", "📋 Peças Mapeadas", 
+    "💾 Exportar", "📥 CSV", "🖨️ PDF"
+]
 
-st.sidebar.markdown("### 👤 User Account & Setup")
-lingua = st.sidebar.selectbox("🌍 Language", options=list(TRADUZIONI.keys()), format_func=lambda x: {"IT":"🇮🇹 IT","GB":"🇬🇧 GB"}[x])
+st.sidebar.markdown("<h3 style='margin-top:0;'>👤 Profilo & Account</h3>", unsafe_allow_html=True)
+lingua = st.sidebar.selectbox("🌍 Lingua / Language", options=list(TRADUZIONI.keys()), format_func=lambda x: {"IT":"🇮🇹 Italiano","GB":"🇬🇧 English","FR":"🇫🇷 Français","DE":"🇩🇪 Deutsch","ES":"🇪🇸 Español","CZ":"🇨🇿 Čeština","HU":"🇭🇺 Magyar","RO":"🇷🇴 Română","PT":"🇵🇹 Português"}[x])
 Txt = TRADUZIONI[lingua]
 
-st.title(Txt[0])
-st.subheader(Txt[1])
+st.markdown(f'<div class="industrial-card"><h2>{Txt[0]}</h2><p style="color:#94A3B8; margin-bottom:0;">{Txt[5]}</p></div>', unsafe_allow_html=True)
+st.markdown(f'<div class="industrial-card"><h3>{Txt[1]}</h3>', unsafe_allow_html=True)
 c1, c2, c3 = st.columns(3)
 with c1: num_ordine = st.text_input(Txt[2], value="ORD-2D-001")
-with c2: nome_cliente = st.text_input(Txt[3], value="Customer SpA")
+with c2: nome_cliente = st.text_input(Txt[3], value="Meccanica Generale SpA")
 with c3: data_commessa = st.date_input(Txt[4], date.today())
+st.markdown('</div>', unsafe_allow_html=True)
 
-st.markdown(f'<div style="border:1px solid #FF4B4B;padding:10px;border-radius:5px;background-color:#222222;margin-bottom:15px;"><p style="margin:0;color:#FFF !important;"><b>{Txt[5]}:</b> {num_ordine} | <b>{Txt[3]}:</b> {nome_cliente}</p></div>', unsafe_allow_html=True)
-
-st.sidebar.header(Txt[6])
+st.sidebar.markdown(f"<h4>{Txt[6]}</h4>", unsafe_allow_html=True)
 W_lamiera = st.sidebar.number_input(Txt[7], value=1000, step=100)
 H_lamiera = st.sidebar.number_input(Txt[8], value=1000, step=100)
-st.sidebar.header(Txt[9])
+
+st.sidebar.markdown(f"<h4>{Txt[9]}</h4>", unsafe_allow_html=True)
 diametro_utensile = st.sidebar.number_input(Txt[10], value=6.0, step=1.0)
 distanza_sicurezza = st.sidebar.number_input(Txt[11], value=4.0, step=1.0)
 passo_scansione = st.sidebar.slider(Txt[12], min_value=2, max_value=25, value=10, step=1)
@@ -58,40 +164,44 @@ def estrai_e_azzera_poligono_da_dxf(file_bytes):
         for e in msp.query('LINE'):
             linee.append(LineString([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)]))
         for e in msp.query('LWPOLYLINE POLYLINE'):
-            pts = [(p, p) for p in e.vertices()]
-            if len(pts) >= 3: linee.append(LineString(pts))
+            pts = []
+            for vertex in e.get_points(): pts.append((vertex, vertex))
+            if len(pts) >= 2: linee.append(LineString(pts))
+        if not linee: return None
         unione = unary_union(linee)
         poly = unione if unione.geom_type == 'Polygon' else Polygon([c for l in linee for c in l.coords])
-        if poly:
+        if poly and poly.is_valid and poly.area > 1:
             mx, my, _, _ = poly.bounds
             return affinity.translate(poly, xoff=-mx, yoff=-my)
         return None
     except: return None
+st.markdown(f'<div class="industrial-card"><h3>{Txt[13]}</h3>', unsafe_allow_html=True)
+file_caricati = st.file_uploader(Txt[14], type=["dxf"], accept_multiple_files=True, label_visibility="collapsed")
+st.markdown('</div>', unsafe_allow_html=True)
 
-st.header(Txt[13])
-file_caricati = st.file_uploader(Txt[14], type=["dxf"], accept_multiple_files=True)
 lista_particolari = []
 
 if file_caricati:
-    st.markdown(f'<div style="background-color:#111111; padding:20px; border-radius:8px; border:2px solid #FF4B4B; margin-bottom:20px;"><h4 style="color:#FFF !important;">{Txt[15]}</h4>', unsafe_allow_html=True)
+    st.markdown(f'<div class="industrial-card"><h3>{Txt[15]}</h3><div style="margin-top:15px;">', unsafe_allow_html=True)
     
     for f in file_caricati:
         poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
-        
         if not poly or poly.area < 1:
             poly = Polygon([(0,0), (90,0), (90,80), (0,80)])
             
         mx, my, xx, yx = poly.bounds
+        w_p, h_p = xx-mx, yx-my
+        
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown(f'<p style="color:#00FFCD !important; font-weight:bold; margin-top:5px; margin-bottom:0;">📄 {f.name}</p>', unsafe_allow_html=True)
-            st.caption(f"Dimensione: {round(xx-mx)} x {round(yx-my)} mm · polygon")
+            st.markdown(f'<span style="color:#FFFFFF !important; font-weight:bold; font-size:16px;">📄 {f.name}</span>', unsafe_allow_html=True)
+            st.markdown(f'<br><span style="color:#A1A1AA !important; font-size:14px;">Dimensione: {round(w_p)} x {round(h_p)} mm · polygon</span>', unsafe_allow_html=True)
         with col2:
-            qta = st.number_input(f"Qta_{f.name}", min_value=1, max_value=200, value=5, step=1, label_visibility="collapsed")
+            qta = st.number_input(f"{Txt[16]}: {f.name}", min_value=1, max_value=200, value=5, step=1)
             
         lista_particolari.append({"nome": f.name.replace(".dxf", ""), "poly": poly, "qta": int(qta), "area": poly.area})
             
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div></div>', unsafe_allow_html=True)
 
 if st.button(Txt[17], type="primary"):
     if not lista_particolari: st.error(Txt[18])
@@ -103,12 +213,16 @@ if st.button(Txt[17], type="primary"):
         bordo_utile = Polygon([(offset_totale, offset_totale), (W_lamiera - offset_totale, offset_totale), (W_lamiera - offset_totale, H_lamiera - offset_totale), (offset_totale, H_lamiera - offset_totale)])
         piazzati, report = [], []
         area_usata = 0
+        
         fig, ax = plt.subplots(figsize=(10, 10))
-        ax.set_facecolor('#151515')
-        fig.patch.set_facecolor('#111111')
+        ax.set_facecolor('#1E1E24')
+        fig.patch.set_facecolor('#121214')
         ax.add_patch(plt.Rectangle((0, 0), W_lamiera, H_lamiera, fill=False, color="#FF4B4B", linewidth=3))
-        colori = cm.get_cmap('tab10', len(list(set([i["nome"] for i in coda]))))
-        c_dict = {n: colori(idx) for idx, n in enumerate(list(set([i["nome"] for i in coda])))}
+        
+        nomi_unici = list(set([i["nome"] for i in coda]))
+        colori = cm.get_cmap('tab10', len(nomi_unici))
+        c_dict = {n: colori(idx) for idx, n in enumerate(nomi_unici)}
+        
         for item in coda:
             p_orig = item["poly"]
             ok = False
@@ -135,15 +249,27 @@ if st.button(Txt[17], type="primary"):
         ax.set_xlim(-50, W_lamiera + 50)
         ax.set_ylim(-50, H_lamiera + 50)
         ax.set_aspect('equal')
+        ax.tick_params(colors='white')
+        
+        st.markdown(f'<div class="industrial-card">', unsafe_allow_html=True)
         st.pyplot(fig)
+        st.markdown('</div>', unsafe_allow_html=True)
+        
         rend = (area_usata / (W_lamiera * H_lamiera)) * 100
+        
+        st.markdown(f'<div class="industrial-card">', unsafe_allow_html=True)
         m1, m2 = st.columns(2)
         with m1: st.metric(Txt[19], f"{rend:.2f}%")
         with m2: st.metric(Txt[20], f"{100-rend:.2f}%")
-        st.subheader(Txt[21])
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown(f'<div class="industrial-card"><h3 style="color:#FFFFFF;">{Txt[21]}</h3>', unsafe_allow_html=True)
         df_rep = pd.DataFrame(report)
         st.dataframe(df_rep, use_container_width=True)
-        st.header(Txt[22])
+        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown(f'<div class="industrial-card"><h3 style="color:#FFFFFF;">{Txt[22]}</h3>', unsafe_allow_html=True)
         e1, e2 = st.columns(2)
         with e1: st.download_button(Txt[23], data=df_rep.to_csv(index=False).encode('utf-8'), file_name='Nesting.csv', mime='text/csv')
         with e2: st.markdown(f'<button onclick="window.print()" style="width:100%;height:38px;background-color:#4CAF50;color:white;border:none;border-radius:4px;font-weight:bold;cursor:pointer;">{Txt[24]}</button>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
