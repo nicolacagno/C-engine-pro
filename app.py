@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.dates as mdates
 from datetime import date, datetime, timedelta
+from shapely.geometry import Polygon
 
 # Configurazione iniziale della pagina
 st.set_page_config(page_title="MetalHub Suite", layout="wide", initial_sidebar_state="expanded")
@@ -58,30 +59,3 @@ TRAD = {
 
 def t(chiave):
     lang = st.session_state.lang
-    if lang in TRAD and chiave in TRAD[lang]:
-        return TRAD[lang][chiave]
-    return TRAD["EN"].get(chiave, chiave)
-
-# CSS STABLE REPLIT PRESET WITH MOBILE COMPATIBILITY & BUTTON CONTRAST FIX
-st.markdown("""
-    <style>
-    .stApp, html, body, [data-testid="stSidebar"], [data-testid="stHeader"] { background-color: #1A1A1A !important; }
-    h1, h2, h3, h4, p, label, span, [data-testid="stWidgetLabel"], .stMarkdown { 
-        color: #A0A0A0 !important; font-family: 'Segoe UI', sans-serif !important;
-    }
-    h2, h3, h4 { color: #FF5722 !important; font-weight: 600 !important; }
-    .stTextInput input, .stNumberInput input { 
-        color: #FF5722 !important; background-color: #262626 !important; 
-        border: 1px solid #404040 !important; font-weight: bold !important;
-    }
-    [data-testid="stFileUploader"] { background-color: #262626 !important; border: 2px dashed #FF5722 !important; }
-    
-    .stButton>button, .stDownloadButton>button { 
-        color: #FFFFFF !important; background-color: #FF5722 !important; 
-        font-weight: bold !important; width: 100% !important; border: none !important;
-        border-radius: 4px !important; padding: 0.6rem 1rem !important;
-        font-size: 13px !important; text-transform: uppercase !important;
-    }
-    .stButton>button:hover, .stDownloadButton>button:hover { background-color: #E64A19 !important; color: #FFFFFF !important; }
-    .stDataFrame, [data-testid="stDataEditor"] { background-color: #262626 !important; border: 1px solid #404040 !important; }
-    .standby-box { border: 2px dashed #404040; border-radius: 8px; padding: 60px 20px; text-align: center; background-color: #1F1F1F; color
