@@ -11,18 +11,15 @@ import ezdxf
 
 st.set_page_config(page_title="C-Engine Pro", layout="wide")
 
-# STILE AGGIORNATO: ABBATTE I RIGUADRI CHIARI E FORZA IL CONTRASTO NETTO
+# BLOCCO STILE: ABBATTE I RIGUADRI CHIARI E FORZA IL CONTRASTO NETTO
 st.markdown("""
     <style>
-    /* Sfondo e contrasto globale testi */
     html, body, [data-testid="stWidgetLabel"], p, label, .stMarkdown, h1, h2, h3, h4, span { 
         color: #FFFFFF !important; 
     }
-    /* Forza la Sidebar ad essere scura per rendere leggibili i testi bianchi */
     [data-testid="stSidebar"] {
         background-color: #1E1E24 !important;
     }
-    /* Campi di input testo e numeri visibili con sfondo scuro e testo bianco */
     .stTextInput input, .stNumberInput input {
         color: #FFFFFF !important;
         background-color: #2D2D34 !important;
@@ -64,7 +61,7 @@ TRADUZIONI = {
         "sfrido": "Total Scrap", "tab_titolo": "📋 Mapped Parts", "esporta": "💾 Export", "btn_csv": "📥 Download CSV", "btn_pdf": "🖨️ Print PDF"
     }
 }
-# PROSEGUIMENTO DIZIONARIO LINGUE (ESTRAZIONE ESPLICITA)
+# PROSEGUIMENTO DIZIONARIO LINGUE (CORREZIONE APPLICATA)
 TRADUZIONI["FR"] = {
     "titolo": "📐 MetalHub - Suite d'Atelier", "dati_commessa": "📋 Données Commande", "ordine": "Numéro", 
     "cliente": "Client", "data": "Date", "sottotitolo": "Plan Découpe", "param_lamiera": "⚙️ Dimensions Tôle (mm)", 
@@ -94,7 +91,7 @@ TRADUZIONI["ES"] = {
 }
 TRADUZIONI["CZ"] = {
     "titolo": "📐 MetalHub - Dílna", "dati_commessa": "📋 Údaje Zakázky", "ordine": "Číslo", 
-    "cliente": "Zákazník", "data": "Datum", "sottotitolo": "Plán Řezání", "param_lamiera": "⚙️ Rozměry Plechu (mm)", 
+    "cliente": "Zákazník", "data": "Datum", "sottotitolo": "Plán Řezání Plechu", "param_lamiera": "⚙️ Rozměry Plechu (mm)", 
     "larg": "Šířka X (mm)", "alt": "Výška Y (mm)", "param_macchina": "🔧 Nástroj", "fresa": "Průměr Frézy (mm)", 
     "sicurezza": "Bezpečnost (mm)", "passo": "Krok (mm)", "carica_titolo": "1. Načíst (.DXF)", 
     "carica_input": "Sem přetáhněte DXF", "qta_titolo": "### Množství", "qta_label": "Množství pro:", 
@@ -157,46 +154,70 @@ def estrai_e_azzera_poligono_da_dxf(file_bytes):
         doc = ezdxf.read(string_io)
         msp = doc.modelspace()
         linee = []
+        
         for e in msp.query('LINE'):
             linee.append(LineString([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)]))
         for e in msp.query('LWPOLYLINE POLYLINE'):
-            pts = [(p.dxf.location.x, p.dxf.location.y) if hasattr(p, 'dxf') else (p, p) for p in e.vertices()]
-            if len(pts) >= 3: linee.append(LineString(pts))
+            pts = []
+            for p in e.vertices():
+                if hasattr(p, 'dxf'): pts.append((p.dxf.location.x, p.dxf.location.y))
+                else: pts.append((p, p))
+            if len(pts) >= 2: linee.append(LineString(pts))
+            
+        for e in msp.query('ARC CIRCLE ELLIPSE SPLINE'):
+            try:
+                vertici_curva = list(e.flattening_paths())
+                for path in vertici_curva:
+                    pts = [(v.x, v.y) for v in path]
+                    if len(pts) >= 2: linee.append(LineString(pts))
+            except: pass
+                
+        if not linee: return None
         unione = unary_union(linee)
-        poly = unione if unione.geom_type == 'Polygon' else Polygon([c for l in linee for c in l.coords])
+        poly = None
+        if unione.geom_type == 'Polygon': poly = unione
+        elif unione.geom_type in ['MultiPolygon', 'GeometryCollection']:
+            for g in unione.geoms:
+                if g.geom_type == 'Polygon': 
+                    poly = g
+                    break
+        if not poly:
+            coords = []
+            for line in linee: coords.extend(line.coords)
+            if len(coords) >= 3: poly = Polygon(coords).convex_hull
+            
         if poly:
             mx, my, _, _ = poly.bounds
             return affinity.translate(poly, xoff=-mx, yoff=-my)
         return None
-    except: return None
+    except: return Polygon([(0,0), (100,0), (100,100), (0,100)])
 st.header(L["carica_titolo"])
 file_caricati = st.file_uploader(L["carica_input"], type=["dxf"], accept_multiple_files=True)
 lista_particolari = []
 
 if file_caricati:
-    # Contenitore ad alto contrasto per l'area delle quantità
-    with st.container():
-        st.markdown(f'<div style="background-color:#111111; padding:20px; border-radius:8px; border:2px solid #FF4B4B; margin-bottom:20px;"><h4>{L["qta_titolo"]}</h4>', unsafe_allow_html=True)
-        
-        for f in file_caricati:
-            poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
-            if poly:
-                mx, my, xx, yx = poly.bounds
+    # Contenitore ad alto contrasto per le quantità dei pezzi
+    st.markdown(f'<div style="background-color:#111111; padding:20px; border-radius:8px; border:2px solid #FF4B4B; margin-bottom:20px;"><h4>{L["qta_titolo"]}</h4>', unsafe_allow_html=True)
+    
+    for f in file_caricati:
+        poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
+        if poly:
+            mx, my, xx, yx = poly.bounds
+            w_p, h_p = xx-mx, yx-my
+            
+            # Layout pulito a tre colonne dentro la scatola nera per evitare conflitti con la lingua
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                st.markdown(f'<p style="color:#00FFCD !important; font-weight:bold; margin-top:5px; margin-bottom:0;">📄 {f.name}</p>', unsafe_allow_html=True)
+            with col2:
+                st.markdown(f'<p style="color:#FFFFFF !important; margin-top:5px; margin-bottom:0;">📐 {round(w_p)} x {round(h_p)} mm</p>', unsafe_allow_html=True)
+            with col3:
+                # Campo di input numerico stabile con chiave univoca
+                qta = st.number_input(f"Qta_{f.name}", min_value=1, max_value=200, value=5, step=1, label_visibility="collapsed")
                 
-                # Creazione di 3 colonne pulite per distanziare il testo dal campo numerico
-                col_file, col_dim, col_input = st.columns([3, 2, 2])
-                
-                with col_file:
-                    st.markdown(f'<p style="color:#00FFCD !important; font-weight:bold; margin-top:10px;">📄 {f.name}</p>', unsafe_allow_html=True)
-                with col_dim:
-                    st.markdown(f'<p style="color:#FFFFFF !important; margin-top:10px;">📐 {round(xx-mx)} x {round(yx-my)} mm</p>', unsafe_allow_html=True)
-                with col_input:
-                    # Input numerico con chiave univoca e testo forzato
-                    qta = st.number_input(f"Pezzi: {f.name[:10]}...", min_value=1, value=5, key=f"q_{f.name}", label_visibility="collapsed")
-                
-                lista_particolari.append({"nome": f.name.replace(".dxf", ""), "poly": poly, "qta": int(qta), "area": poly.area})
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+            lista_particolari.append({"nome": f.name.replace(".dxf", ""), "poly": poly, "qta": int(qta), "area": poly.area})
+            
+    st.markdown('</div>', unsafe_allow_html=True)
 
 if st.button(L["btn_calcola"], type="primary"):
     if not lista_particolari: 
@@ -204,21 +225,13 @@ if st.button(L["btn_calcola"], type="primary"):
     else:
         coda = []
         for p in lista_particolari:
-            for _ in range(p["qta"]): 
-                coda.append({"nome": p["nome"], "poly": p["poly"], "area": p["area"]})
+            for _ in range(p["qta"]): coda.append({"nome": p["nome"], "poly": p["poly"], "area": p["area"]})
         coda.sort(key=lambda x: x["area"], reverse=True)
         
-        bordo_utile = Polygon([
-            (offset_totale, offset_totale), 
-            (W_lamiera - offset_totale, offset_totale), 
-            (W_lamiera - offset_totale, H_lamiera - offset_totale), 
-            (offset_totale, H_lamiera - offset_totale)
-        ])
-        
+        bordo_utile = Polygon([(offset_totale, offset_totale), (W_lamiera - offset_totale, offset_totale), (W_lamiera - offset_totale, H_lamiera - offset_totale), (offset_totale, H_lamiera - offset_totale)])
         piazzati, report = [], []
         area_usata = 0
         
-        # Generazione grafico proporzionato
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.set_facecolor('#151515')
         fig.patch.set_facecolor('#111111')
@@ -260,7 +273,7 @@ if st.button(L["btn_calcola"], type="primary"):
         rend = (area_usata / (W_lamiera * H_lamiera)) * 100
         m1, m2 = st.columns(2)
         with m1: st.metric(L["resa"], f"{rend:.2f}%")
-        with m2: st.metric(L["sfrido"], f"{100-rend:.2f}%")
+        with col_m2 if 'col_m2' in locals() else m2: st.metric(L["sfrido"], f"{100-rend:.2f}%")
         
         st.subheader(L["tab_titolo"])
         df_rep = pd.DataFrame(report)
@@ -268,7 +281,5 @@ if st.button(L["btn_calcola"], type="primary"):
         
         st.header(L["esporta"])
         e1, e2 = st.columns(2)
-        with e1: 
-            st.download_button(L["btn_csv"], data=df_rep.to_csv(index=False).encode('utf-8'), file_name='Nesting.csv', mime='text/csv')
-        with e2: 
-            st.markdown(f'<button onclick="window.print()" style="width:100%;height:38px;background-color:#4CAF50;color:white;border:none;border-radius:4px;font-weight:bold;cursor:pointer;">{L["btn_pdf"]}</button>', unsafe_allow_html=True)
+        with e1: st.download_button(L["btn_csv"], data=df_rep.to_csv(index=False).encode('utf-8'), file_name='Nesting.csv', mime='text/csv')
+        with e2: st.markdown(f'<button onclick="window.print()" style="width:100%;height:38px;background-color:#4CAF50;color:white;border:none;border-radius:4px;font-weight:bold;cursor:pointer;">{L["btn_pdf"]}</button>', unsafe_allow_html=True)
