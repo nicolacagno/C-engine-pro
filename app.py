@@ -85,7 +85,7 @@ TRADUZIONI["DE"] = {
 }
 TRADUZIONI["ES"] = {
     "titolo": "📐 MetalHub - Suite de Taller", "dati_commessa": "📋 Datos Orden", "ordine": "Número", 
-    "cliente": "Cliente", "fecha": "Fecha", "sottotitolo": "Plan de Corte", "param_lamiera": "⚙️ Dimensiones Chapa (mm)", 
+    "cliente": "Cliente", "data": "Fecha", "sottotitolo": "Plan de Corte", "param_lamiera": "⚙️ Dimensiones Chapa (mm)", 
     "larg": "Ancho X (mm)", "alt": "Alto Y (mm)", "param_macchina": "🔧 Parámetros", "fresa": "Diámetro Fresa (mm)", 
     "sicurezza": "Distancia Seg. (mm)", "passo": "Paso Escaneo (mm)", "carica_titolo": "1. Cargar (.DXF)", 
     "carica_input": "Arrastre los DXF aquí", "qta_titolo": "### Cantidades", "qta_label": "Cantidad para:", 
@@ -106,27 +106,27 @@ TRADUZIONI["HU"] = {
     "cliente": "Ügyfél", "data": "Dátum", "sottotitolo": "Vágási Terv", "param_lamiera": "⚙️ Lemezméretek (mm)", 
     "larg": "Szélesség X (mm)", "alt": "Magasság Y (mm)", "param_macchina": "🔧 Szerszám", "fresa": "Maró (mm)", 
     "sicurezza": "Biztonság (mm)", "passo": "Lépés (mm)", "carica_titolo": "1. DXF Feltöltés", 
-    "carica_input": "Húzza ide a DXF-et", "### Mennyiségek", "qta_label": "Mennyiség ehhez:", 
+    "carica_input": "Húzza ide a DXF-et", "qta_titolo": "### Mennyiségek", "qta_label": "Mennyiség ehhez:", 
     "btn_calcola": "🚀 Beágyazás Indítása", "errore_no_file": "Töltsön fel DXF-et!", "resa": "Lemezkihasználás", 
     "sfrido": "Hulladék", "tab_titolo": "📋 Alkatrészek", "esporta": "💾 Export", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
 }
 TRADUZIONI["RO"] = {
-    "titolo": "📐 MetalHub - Atelier", "dati_commessa": "📋 Date Comandă", "ordine": "Număr", 
+    "titolo": "📐 MetalHub - Suite Atelier", "dati_commessa": "📋 Date Comandă", "ordine": "Număr", 
     "cliente": "Client", "data": "Dată", "sottotitolo": "Plan Tăiere", "param_lamiera": "⚙️ Dimensiuni Tablă (mm)", 
     "larg": "Lățime X (mm)", "alt": "Înălțime Y (mm)", "param_macchina": "🔧 Parametri Sculă", "fresa": "Diametru Freză (mm)", 
     "sicurezza": "Siguranță (mm)", "passo": "Pas Scanare (mm)", "carica_titolo": "1. Încărcare (.DXF)", 
     "carica_input": "Trageți DXF aici", "qta_titolo": "### Cantități", "qta_label": "Cantitate pentru:", 
-    "btn_calcola": "🚀 Imbricare Reală", "errore_no_file": "Încărcați DXF!", "resa": "Randament Tablă", 
-    "sfrido": "Deșeu Total", "tab_titolo": "📋 Piese Imbricate", "esporta": "💾 Export", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+    "btn_calcola": "🚀 Imbricare Reală", "errore_no_file": "Încărcați DXF!", "resa": "Randament Net Tablă", 
+    "sfrido": "Deșeu Total", "tab_titolo": "📋 Piese Imbricate", "esporta": "💾 Export", "btn_csv": "📥 Descarcă Raport", "btn_pdf": "🖨️ PDF"
 }
 TRADUZIONI["PT"] = {
-    "titolo": "📐 MetalHub - Oficina", "dati_commessa": "📋 Dados Pedido", "ordine": "Número", 
+    "titolo": "📐 MetalHub - Suite de Oficina", "dati_commessa": "📋 Dados da Encomenda", "ordine": "Número", 
     "cliente": "Cliente", "data": "Data", "sottotitolo": "Plano Corte", "param_lamiera": "⚙️ Dimensões Chapa (mm)", 
     "larg": "Largura X (mm)", "alt": "Altura Y (mm)", "param_macchina": "🔧 Ferramenta", "fresa": "Diâmetro Fresa (mm)", 
-    "sicurezza": "Segurança (mm)", "passo": "Passo (mm)", "carica_titolo": "1. Carregar (.DXF)", 
+    "sicurezza": "Segurança (mm)", "passo": "Passo (mm)", "carica_titolo": "1. Carregar Arquivos", 
     "carica_input": "Arraste os DXF aqui", "qta_titolo": "### Quantidades", "qta_label": "Quantidade para:", 
-    "btn_calcola": "🚀 Nesting Real", "errore_no_file": "Carregue um DXF!", "resa": "Rendimento Chapa", 
-    "sfrido": "Sucata Total", "tab_titolo": "📋 Peças Mapeadas", "esporta": "💾 Exportar", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+    "btn_calcola": "🚀 Executar Nesting Real", "errore_no_file": "Por favor, carregue pelo menos um arquivo DXF válido!",
+    "resa": "Rendimento Líquido da Chapa", "sfrido": "Total Sucata / Desperdício", "tab_titolo": "📋 Lista de Peças Mapeadas", "esporta": "💾 Exportar", "btn_csv": "📥 Baixar Relatório", "btn_pdf": "🖨️ PDF"
 }
 
 st.sidebar.markdown("### 👤 User Account & Setup")
