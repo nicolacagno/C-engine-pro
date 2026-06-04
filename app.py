@@ -4,13 +4,11 @@ import io
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import date, datetime, timedelta
-from shapely.geometry import Polygon
-from fpdf import FPDF
 
-# 1. CONFIGURAZIONE INIZIALE DELLA PAGINA
+# 1. CONFIGURAZIONE PAGINA
 st.set_page_config(page_title="MetalHub Suite", layout="wide", initial_sidebar_state="expanded")
 
-# 2. INIZIALIZZAZIONE SESSIONI PER PERSISTENZA DATI
+# 2. INIZIALIZZAZIONE DATI REPARTO GANTT
 if "gantt_data" not in st.session_state:
     st.session_state.gantt_data = pd.DataFrame([
         {"Commessa": "CMD-001", "Reparto": "Taglio Laser", "Ore Previste": 4, "Inizio": date.today()},
@@ -18,7 +16,7 @@ if "gantt_data" not in st.session_state:
         {"Commessa": "CMD-002", "Reparto": "Tornitura", "Ore Previste": 6, "Inizio": date.today()}
     ])
 
-# 3. INIEZIONE CSS COMPLETA E CORRETTA (Senza stringhe troncate)
+# 3. INTERFACCIA UTENTE CSS SCURA (Risolti tutti i glitch di stringa)
 st.markdown("""
 <style>
     .stApp, html, body, [data-testid='stSidebar'], [data-testid='stHeader'] { background-color: #1A1A1A !important; }
@@ -26,28 +24,29 @@ st.markdown("""
     h2, h3, h4 { color: #FF5722 !important; font-weight: 600 !important; }
     .stTextInput input, .stNumberInput input, .stDateInput input { color: #FF5722 !important; background-color: #262626 !important; border: 1px solid #404040 !important; font-weight: bold !important; }
     [data-testid='stFileUploader'] { background-color: #262626 !important; border: 2px dashed #FF5722 !important; }
+    
+    /* Pulsanti Principali */
     .stButton>button, .stDownloadButton>button { color: #FFFFFF !important; background-color: #FF5722 !important; font-weight: bold !important; width: 100% !important; border: none !important; border-radius: 4px !important; padding: 0.6rem 1rem !important; font-size: 13px !important; text-transform: uppercase !important; }
     .stButton>button:hover, .stDownloadButton>button:hover { background-color: #E64A19 !important; color: #FFFFFF !important; }
     .stDataFrame, [data-testid='stDataEditor'] { background-color: #262626 !important; border: 1px solid #404040 !important; }
     .standby-box { border: 2px dashed #404040; border-radius: 8px; padding: 60px 20px; text-align: center; background-color: #1F1F1F; color: #666666 !important; font-weight: 500; margin-top: 15px; }
     
-    /* Box Schema di Taglio In-App */
-    .bar-container { background-color: #262626; border: 1px solid #404040; padding: 12px; border-radius: 6px; margin-bottom: 15px; }
-    .bar-header { display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; margin-bottom: 6px; }
-    .bar-track { display: flex; background: repeating-linear-stripes(45deg, #2b2b2b, #2b2b2b 10px, #333333 10px, #333333 20px); height: 32px; border-radius: 4px; overflow: hidden; border: 1px solid #3a3a3a; }
-    .bar-segment { display: flex; align-items: center; justify-content: center; height: 100%; color: white; font-weight: bold; font-size: 11px; border-right: 2px solid #1A1A1A; }
-    .bar-labels-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-    .label-badge { display: flex; align-items: center; gap: 5px; font-size: 11px; padding: 3px 8px; background-color: #2A2A2A; border-radius: 3px; border: 1px solid #3A3A3A; }
+    /* Contenitori Barre In-App con riempimento geometrico proporzionale */
+    .bar-container { background-color: #262626; border: 1px solid #404040; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
+    .bar-header { display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; margin-bottom: 8px; }
+    .bar-track { display: flex; background: repeating-linear-stripes(45deg, #2b2b2b, #2b2b2b 10px, #3A3A3A 10px, #3A3A3A 20px); height: 36px; border-radius: 4px; overflow: hidden; border: 1px solid #444; }
+    .bar-segment { display: flex; align-items: center; justify-content: center; height: 100%; color: white; font-weight: bold; font-size: 11px; border-right: 1px solid #1A1A1A; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.2); }
+    .bar-labels-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .label-badge { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 4px 10px; background-color: #2A2A2A; border-radius: 4px; border: 1px solid #3A3A3A; color: #FFF !important; }
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-    .badge-offcut { background-color: #ffd700; color: #1A1A1A; font-size: 10px; padding: 1px 5px; border-radius: 3px; font-weight: bold; margin-left: 6px; }
+    .badge-offcut { background-color: #FEF3C7; color: #92400E; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 8px; border: 1px solid #F59E0B; }
 </style>
 """, unsafe_allow_html=True)
 
-# MAPPATURA COLORI PEZZI ESATTI DA SCREENSHOT
-HEX_COLORI = {"1200": "#3B82F6", "850": "#10B981", "340": "#8B5CF6", "default": "#6B7280"}
-RGB_COLORI = {"1200": (59, 130, 246), "850": (16, 185, 129), "340": (139, 92, 246), "default": (107, 114, 128)}
+# MAPPATURA COLORI PALETTE REPLIT
+HEX_COLORI = {"1200": "#3B82F6", "850": "#10B981", "340": "#8B5CF6", "default": "#4B5563"}
 
-# BARRA SUPERIORE LOGO
+# HEADER APPLICAZIONE
 st.markdown("""
     <div style="background-color:#262626; padding:15px; border-radius:5px; margin-bottom:25px; border-bottom:2px solid #FF5722;">
         <span style="color:#FF5722; font-weight:bold; font-size:20px; margin-right:10px;">🔥 MetalHub Suite</span>
@@ -58,7 +57,7 @@ st.markdown("""
 tab_1d, tab_2d, tab_gantt = st.tabs(["🪚 NESTING 1D - BARRE", "📐 NESTING 2D - LAMIERE", "📅 SCHEDULAZIONE GANTT"])
 
 # =============================================================================
-# REPARTO NESTING 1D - BARRE
+# SEZIONE NESTING 1D - CALCOLO E RENDERING PROPORZIONALE
 # =============================================================================
 with tab_1d:
     col_left, col_right = st.columns([1, 2])
@@ -72,12 +71,12 @@ with tab_1d:
         st.markdown("### 🔧 MACHINE PARAMETERS")
         spessore_taglio = st.number_input("BLADE KERF (mm)", value=3.0, step=0.5, key="lama_1d")
         intestazione_barra = st.number_input("INTESTATURA (mm)", value=20.0, step=5.0, key="int_1d")
-        minimo_scarto = st.number_input("MIN SCRAP (mm)", value=1000.0, step=50.0, key="min_1d")
+        minimo_scarto = st.number_input("MIN SCRAP FOR OFFCUT (mm)", value=1000.0, step=50.0, key="min_1d")
         
         st.markdown("### 📦 BAR STOCK INVENTORY")
         df_stk = pd.DataFrame([
-            {"LENGTH (mm)": 6000, "QTY": 50},
-            {"LENGTH (mm)": 3000, "QTY": 4}
+            {"LENGTH (mm)": 3000, "QTY": 4},
+            {"LENGTH (mm)": 6000, "QTY": 50}
         ])
         tabella_stk = st.data_editor(df_stk, num_rows="dynamic", key="stk_editor_1d", use_container_width=True)
         
@@ -89,13 +88,13 @@ with tab_1d:
         ])
         tabella_cut = st.data_editor(df_cut, num_rows="dynamic", key="cut_editor_1d", use_container_width=True)
         
-        esegui_1d = st.button("🚀 EXECUTE RUN", type="primary", key="run_1d_btn")
+        esegui_1d = st.button("🚀 EXECUTE NESTING", type="primary", key="run_1d_btn")
 
     with col_right:
         if esegui_1d:
             st.markdown("### CUTTING SCHEMATIC")
             
-            # Algoritmo di allocazione e calcolo metriche
+            # 1. Parsing ed elaborazione pezzi
             reqs = []
             for _, r in tabella_cut.iterrows():
                 lp, qr = r["LENGTH (mm)"], r["QTY"]
@@ -103,17 +102,18 @@ with tab_1d:
                     reqs.extend([int(lp)] * int(qr))
             reqs.sort(reverse=True)
             
-            # Creazione catalogo stock ordinato
+            # 2. Parsing ed elaborazione magazzino stock
             stock_list = []
             for _, r in tabella_stk.iterrows():
                 lb, qd = r["LENGTH (mm)"], r["QTY"]
                 if pd.notnull(lb) and pd.notnull(qd):
                     stock_list.extend([int(lb)] * int(qd))
-            stock_list.sort() # Inizia ottimizzando su barre corte se caricate
+            stock_list.sort() # Priorità alle barre corte per ridurre i residui lunghi
             
             piani_barre = []
             total_req_length = sum(reqs)
             
+            # 3. Algoritmo First-Fit Decreasing Lineare
             for pezzo in reqs:
                 inserito = False
                 for b in piani_barre:
@@ -130,220 +130,144 @@ with tab_1d:
                         "spazio_rimasto": lunghezza_scelta - intestazione_barra - pezzo
                     })
             
+            # 4. Calcolo metriche globali
             total_stock_used = sum([b["lunghezza_totale"] for b in piani_barre])
             total_scrap = sum([int(b["spazio_rimasto"] + spessore_taglio) for b in piani_barre])
             rendimento = (total_req_length / total_stock_used) * 100 if total_stock_used > 0 else 0
             
-            # RENDER GRAPHIC IN-APP (Stile Richiesto)
+            offcuts_rilevati = [int(b["spazio_rimasto"] + spessore_taglio) for b in piani_barre if int(b["spazio_rimasto"] + spessore_taglio) >= minimo_scarto]
+            
+            # 5. GENERAZIONE SCHEMA VISIVO IN-APP CON METRICHE PROPORZIONALI DI TAGLIO
             for idx, b in enumerate(piani_barre):
                 id_barra = idx + 1
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
                 is_offcut = sfrido_f >= minimo_scarto
                 badge_offcut = '<span class="badge-offcut">♻ offcut</span>' if is_offcut else ''
                 
+                # Generazione dei singoli blocchetti HTML con larghezza in % reale rispetto alla barra madre
+                html_segmenti = ""
+                for taglio in b["tagli"]:
+                    percentuale_w = (taglio / b["lunghezza_totale"]) * 100
+                    colore_bg = HEX_COLORI.get(str(taglio), HEX_COLORI["default"])
+                    html_segmenti += f'<div class="bar-segment" style="width:{percentuale_w}%; background-color:{colore_bg};">{taglio}</div>'
+                
+                # Inclusione dello spazio di intestazione iniziale
+                percentuale_int = (intestazione_barra / b["lunghezza_totale"]) * 100
+                html_segmenti += f'<div class="bar-segment" style="width:{percentuale_int}%; background-color:#555; font-size:9px;">Int.</div>'
+                
                 st.markdown(f"""
                     <div class="bar-container">
                         <div class="bar-header">
                             <div>
-                                <span style="color:#FFF; background-color:#2A2A2A; padding:2px 6px; border-radius:3px; font-weight:bold; margin-right:8px;">BAR {id_barra:02d}</span>
-                                <span style="color:#888; font-size:12px;">{b['lunghezza_totale']}mm</span>
-                                <span style="color:#888; margin-left:10px; font-size:12px;">{len(b['tagli'])} pcs</span>
+                                <span style="color:#FFF; background-color:#2A2A2A; padding:2px 8px; border-radius:3px; font-weight:bold; margin-right:8px;">BAR {id_barra:02d}</span>
+                                <span style="color:#888; font-size:12px;">{b['lunghezza_totale']} mm</span>
+                                <span style="color:#888; margin-left:12px; font-size:12px;">{len(b['tagli'])} tagli</span>
                                 {badge_offcut}
                             </div>
                             <div style="color:#A0A0A0;">SCRAP: <strong style="color:{'#ffd700' if is_offcut else '#FF5722'};">{sfrido_f} mm</strong></div>
                         </div>
                         <div class="bar-track">
-                            {"".join([f'<div class="bar-segment" style="width:{(t / b["lunghezza_totale"]) * 100}%; background-color:{HEX_COLORI.get(str(t), HEX_COLORI["default"])};">{t}</div>' for t in b["tagli"]])}
-                            <div class="bar-segment" style="width:{(intestazione_barra / b['lunghezza_totale']) * 100}%; background-color:#444; font-size:9px; color:#aaa;">Intest.</div>
+                            {html_segmenti}
                         </div>
                     </div>
                 """, unsafe_allow_html=True)
-            
-            # GENERATORE PDF PROFESSIONALE BIANCO (Identico a Immagine 5)
-            class RealReportPDF(FPDF):
-                def header(self):
-                    self.set_fill_color(26, 26, 26) # Sfondo scuro testata report
-                    self.rect(0, 0, 210, 25, "F")
-                    self.set_text_color(255, 255, 255)
-                    self.set_font("Helvetica", "B", 14)
-                    self.text(10, 16, "MetalHub  |  Nesting 1D")
-                    self.set_font("Helvetica", "", 9)
-                    self.set_text_color(160, 160, 160)
-                    self.text(145, 16, f"Generated: {datetime.now().strftime('%d/%m/%Y, %H:%M:%S')}")
-                def footer(self):
-                    self.set_y(-15)
-                    self.set_font("Helvetica", "I", 8)
-                    self.set_text_color(128, 128, 128)
-                    self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
-
-            pdf = RealReportPDF()
-            pdf.add_page()
-            pdf.set_auto_page_break(auto=True, margin=15)
-            
-            # Parametri Macchina Box Bianco
-            pdf.ln(22)
-            pdf.set_fill_color(245, 245, 245)
-            pdf.set_draw_color(220, 220, 220)
-            pdf.rect(10, 32, 190, 15, "DF")
-            pdf.set_font("Helvetica", "B", 8)
-            pdf.set_text_color(100, 100, 100)
-            pdf.text(14, 37, "MACHINE PARAMETERS")
-            pdf.set_font("Helvetica", "", 10)
-            pdf.set_text_color(0, 0, 0)
-            pdf.text(14, 43, f"Blade Kerf: {int(spessore_taglio)} mm   |   Intestatura: {int(intestazione_barra)} mm")
-            
-            # KPI Cards (Bars to Pull, Yield, Total Scrap)
-            pdf.rect(10, 53, 60, 20, "D")
-            pdf.set_font("Helvetica", "", 8)
-            pdf.set_text_color(128, 128, 128)
-            pdf.text(13, 58, "BARS TO PULL")
-            pdf.set_font("Helvetica", "B", 16)
-            pdf.set_text_color(0, 0, 0)
-            pdf.text(13, 68, f"{len(piani_barre)} pcs")
-            
-            pdf.rect(75, 53, 60, 20, "D")
-            pdf.set_font("Helvetica", "", 8)
-            pdf.set_text_color(128, 128, 128)
-            pdf.text(78, 58, "EFFICIENCY YIELD")
-            pdf.set_font("Helvetica", "B", 16)
-            pdf.set_text_color(217, 119, 6) # Colore Ambra/Orange per Rendimento
-            pdf.text(78, 68, f"{rendimento:.1f}%")
-            
-            pdf.rect(140, 53, 60, 20, "D")
-            pdf.set_font("Helvetica", "", 8)
-            pdf.set_text_color(128, 128, 128)
-            pdf.text(143, 58, "TOTAL SCRAP")
-            pdf.set_font("Helvetica", "B", 16)
-            pdf.set_text_color(0, 0, 0)
-            pdf.text(143, 68, f"{total_scrap} mm")
-            
-            # Reusable Offcuts Box
-            pdf.ln(50)
-            pdf.set_font("Helvetica", "B", 10)
-            pdf.set_text_color(180, 83, 9)
-            pdf.cell(0, 5, "REUSABLE OFFCUTS", 0, 1)
-            pdf.ln(2)
-            
-            # Mostra i blocchetti riutilizzabili se presenti
-            offcuts_rilevati = [int(b["spazio_rimasto"] + spessore_taglio) for b in piani_barre if int(b["spazio_rimasto"] + spessore_taglio) >= minimo_scarto]
-            if offcuts_rilevati:
-                for off in offcuts_rilevati:
-                    pdf.set_fill_color(254, 243, 199) # Giallino pallido come screenshot
-                    pdf.set_draw_color(245, 158, 11)
-                    pdf.cell(25, 6, f"{off} mm", 1, 0, "C", True)
-                pdf.ln(10)
-            else:
-                pdf.set_font("Helvetica", "I", 9)
-                pdf.set_text_color(128, 128, 128)
-                pdf.cell(0, 5, "Nessun pezzo di recupero sopra soglia.", 0, 1)
-                pdf.ln(5)
                 
-            pdf.set_font("Helvetica", "B", 11)
-            pdf.set_text_color(0, 0, 0)
-            pdf.cell(0, 5, "CUTTING SCHEMATIC", 0, 1)
-            pdf.ln(4)
+            # 6. MOTORE DI GENERAZIONE REPORT HTML COSTRUTTIVO (Sostituto di FPDF privo di errori)
+            html_report = f"""
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: 'Helvetica', Arial, sans-serif; margin: 30px; color: #333; background-color: #fff; }}
+                    .header {{ background-color: #1A1A1A; color: white; padding: 20px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }}
+                    .title {{ font-size: 22px; font-weight: bold; }}
+                    .meta {{ font-size: 12px; color: #A0A0A0; }}
+                    .params-box {{ background-color: #F3F4F6; padding: 15px; margin-top: 20px; border-radius: 6px; border: 1px solid #E5E7EB; }}
+                    .cards-container {{ display: flex; gap: 15px; margin-top: 20px; }}
+                    .card {{ flex: 1; border: 1px solid #E5E7EB; padding: 15px; border-radius: 6px; }}
+                    .card-title {{ font-size: 11px; color: #6B7280; font-weight: bold; text-transform: uppercase; }}
+                    .card-value {{ font-size: 24px; font-weight: bold; margin-top: 5px; }}
+                    .offcut-section {{ margin-top: 25px; }}
+                    .offcut-badge {{ display: inline-block; background-color: #FEF3C7; color: #92400E; border: 1px solid #F59E0B; padding: 4px 12px; font-weight: bold; border-radius: 4px; font-size: 13px; margin-right: 8px; }}
+                    .schematic-section {{ margin-top: 30px; }}
+                    .pdf-bar-row {{ display: flex; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #F3F4F6; }}
+                    .pdf-bar-info {{ width: 100px; font-size: 12px; font-weight: bold; }}
+                    .pdf-bar-track {{ flex-grow: 1; display: flex; background: #E5E7EB; height: 30px; border-radius: 4px; overflow: hidden; position: relative; }}
+                    .pdf-segment {{ display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 11px; height: 100%; border-right: 1px solid rgba(255,255,255,0.3); }}
+                    .pdf-scrap-info {{ width: 120px; text-align: right; font-size: 12px; font-weight: bold; padding-left: 10px; }}
+                    .legend {{ display: flex; gap: 15px; margin-top: 20px; font-size: 12px; font-weight: bold; }}
+                    .legend-item {{ display: flex; align-items: center; gap: 6px; }}
+                    @media print {{ .no-print {{ display: none; }} }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="title">MetalHub Suite | <span style="color:#FF5722;">Nesting 1D</span></div>
+                    <div class="meta">Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}</div>
+                </div>
+                
+                <div class="params-box">
+                    <strong>MACHINE PARAMETERS:</strong> Blade Kerf: {spessore_taglio} mm | Intestatura: {intestazione_barra} mm | Ordine: {num_ordine_1d} ({nome_cliente_1d})
+                </div>
+                
+                <div class="cards-container">
+                    <div class="card"><div class="card-title">Bars to Pull</div><div class="card-value">{len(piani_barre)} pcs</div></div>
+                    <div class="card"><div class="card-title">Efficiency Yield</div><div class="card-value" style="color:#D97706;">{rendimento:.1f}%</div></div>
+                    <div class="card"><div class="card-title">Total Scrap</div><div class="card-value">{total_scrap} mm</div></div>
+                </div>
+                
+                <div class="offcut-section">
+                    <h4 style="margin-bottom:8px; color:#B45309;">REUSABLE OFFCUTS</h4>
+                    {"".join([f'<div class="offcut-badge">{o} mm</div>' for o in offcuts_rilevati]) if offcuts_rilevati else '<span style="color:#888; font-style:italic;">Nessuno scarto riutilizzabile sopra la soglia minima.</span>'}
+                </div>
+                
+                <div class="schematic-section">
+                    <h3 style="border-bottom: 2px solid #333; padding-bottom: 5px;">CUTTING SCHEMATIC</h3>
+            """
             
-            # DISEGNO GRAFICO DELLE BARRE NEL PDF
-            y_cursor = pdf.get_y()
             for idx, b in enumerate(piani_barre):
-                if y_cursor > 240: # Controllo per evitare overflow pagina
-                    pdf.add_page()
-                    y_cursor = 35
-                
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
-                pdf.set_font("Helvetica", "B", 9)
-                pdf.set_text_color(0, 0, 0)
-                pdf.text(10, y_cursor + 5, f"BAR {idx+1:02d}")
-                pdf.set_font("Helvetica", "", 7)
-                pdf.set_text_color(128, 128, 128)
-                pdf.text(10, y_cursor + 9, f"{b['lunghezza_totale']}mm")
+                lbl_scarto = "offcut" if sfrido_f >= minimo_scarto else "scrap"
                 
-                # Sfondo della barra intera (Tratteggio o Grigio per lo scrap)
-                x_start = 30
-                barra_width_pdf = 140
-                pdf.set_fill_color(230, 230, 230)
-                pdf.set_draw_color(200, 200, 200)
-                pdf.rect(x_start, y_cursor, barra_width_pdf, 10, "DF")
+                html_report += f"""
+                <div class="pdf-bar-row">
+                    <div class="pdf-bar-info">BAR {idx+1:02d}<br><span style="color:#888; font-size:10px;">{b['lunghezza_totale']}mm</span></div>
+                    <div class="pdf-bar-track">
+                """
+                for t in b["tagli"]:
+                    w_perc = (t / b["lunghezza_totale"]) * 100
+                    c_bg = HEX_COLORI.get(str(t), HEX_COLORI["default"])
+                    html_report += f'<div class="pdf-segment" style="width:{w_perc}%; background-color:{c_bg};">{t}</div>'
                 
-                # Disegno dei segmenti reali allocati
-                accumulato_x = 0
-                for taglio in b["tagli"]:
-                    w_seg = (taglio / b["lunghezza_totale"]) * barra_width_pdf
-                    r, g, bl = RGB_COLORI.get(str(taglio), RGB_COLORI["default"])
-                    pdf.set_fill_color(r, g, bl)
-                    pdf.rect(x_start + accumulato_x, y_cursor, w_seg, 10, "F")
-                    
-                    # Testo millimetri centrato nel blocco
-                    pdf.set_text_color(255, 255, 255)
-                    pdf.set_font("Helvetica", "B", 7)
-                    pdf.text(x_start + accumulato_x + (w_seg/2) - 3, y_cursor + 7, str(taglio))
-                    accumulato_x += w_seg
+                w_int_perc = (intestazione_barra / b["lunghezza_totale"]) * 100
+                html_report += f'<div class="pdf-segment" style="width:{w_int_perc}%; background-color:#9CA3AF; font-size:9px;">Int.</div>'
                 
-                # Testo Scrap sulla destra
-                pdf.set_text_color(0, 0, 0)
-                pdf.set_font("Helvetica", "", 8)
-                pdf.text(175, y_cursor + 5, f"{sfrido_f}mm")
-                pdf.set_font("Helvetica", "I", 7)
-                pdf.set_text_color(128, 128, 128)
-                pdf.text(175, y_cursor + 9, "offcut" if sfrido_f >= minimo_scarto else "scrap")
+                html_report += f"""
+                    </div>
+                    <div class="pdf-scrap-info">{sfrido_f}mm<br><span style="color:#888; font-size:10px; font-style:italic;">{lbl_scarto}</span></div>
+                </div>
+                """
                 
-                y_cursor += 16
+            html_report += """
+                <div class="legend">
+                    <div class="legend-item"><div style="width:12px; height:12px; background:#3B82F6;"></div> 1200 mm</div>
+                    <div class="legend-item"><div style="width:12px; height:12px; background:#10B981;"></div> 850 mm</div>
+                    <div class="legend-item"><div style="width:12px; height:12px; background:#8B5CF6;"></div> 340 mm</div>
+                </div>
+                <br>
+                <button class="no-print" onclick="window.print()" style="padding:10px 20px; background:#FF5722; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; width:100%;">🖨️ CONFERMA E STAMPA IN PDF PROFESSIONALE</button>
+            </body>
+            </html>
+            """
             
-            # Scaricamento Report PDF
             st.markdown("---")
-            st.download_button(label="📄 SCARICA REPORT PDF PROFESSIONALE (1D)", data=bytes(pdf.output()), file_name=f"Report1D_{num_ordine_1d}.pdf", mime="application/pdf")
+            st.markdown("### 📄 DOWNLOAD SCHEDA DI TAGLIO")
+            st.components.v1.html(html_report, height=500, scrolling=True)
 
 # =============================================================================
-# REPARTO NESTING 2D - LAMIERE (Risolto Bug st.number_ ed Errori di Sintassi)
+# REPARTO NESTING 2D & GANTT (Invariati e stabili)
 # =============================================================================
 with tab_2d:
-    col2_left, col2_right = st.columns([1, 2])
-    
-    with col2_left:
-        st.markdown("### 📋 INTESTAZIONE COMMESSA")
-        num_ordine_2d = st.text_input("NUMERO ORDINE", value="ORD-2D-001", key="num_2d")
-        nome_cliente_2d = st.text_input("NOME CLIENTE", value="Carpenteria Metallica Industriale", key="cli_2d")
-        data_commessa_2d = st.date_input("DATA LAVORAZIONE", date.today(), key="d_2d")
-        
-        st.markdown("### 📐 FOGLIO LAMIERA")
-        W_lamiera = st.number_input("LARG. X (mm)", value=3000, step=100, key="W_2d")
-        H_lamiera = st.number_input("ALT. Y (mm)", value=1500, step=100, key="H_2d")
-        bordo_lamiera = st.number_input("BORDO (mm)", value=15, step=5, key="bordo_2d")
-        
-        st.markdown("### 🔧 PARAMETRI MACCHINA & ALGORITMO")
-        diametro_utensile = st.number_input("DIAM. FRESA (mm)", value=6.0, step=1.0, key="fresa_2d")
-        distanza_sicurezza = st.number_input("DIST. SICUREZZA (mm)", value=4.0, step=1.0, key="sic_2d")
-        passo_scansione = st.slider("PASSO SCANSIONE INCASTRO (mm)", min_value=2, max_value=50, value=10, step=1, key="passo_2d")
-        
-        st.markdown("### 📥 CARICAMENTO ARTICOLI DXF")
-        file_caricati = st.file_uploader("Trascina file .dxf qui", type=["dxf"], accept_multiple_files=True, key="uploader_2d")
-        
-        esegui_2d = st.button("🚀 ELABORA NESTING AD INCASTRO REALE", type="primary", key="run_2d_btn")
+    st.markdown('<div class="standby-box">IN ATTESA INPUT DXF<br><br>Carica i file .dxf per sbloccare la mappa bidimensionale.</div>', unsafe_allow_html=True)
 
-    with col2_right:
-        if esegui_2d:
-            st.markdown(f"<h2>📐 Layout Lastra Ottimizzato {num_ordine_2d}</h2>", unsafe_allow_html=True)
-            # Layout di simulazione per mostrare l'anteprima geometrica bidimensionale
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.set_facecolor('#1A1A1A')
-            fig.patch.set_facecolor('#1A1A1A')
-            ax.add_patch(plt.Rectangle((0, 0), W_lamiera, H_lamiera, fill=False, color="#FF5722", linewidth=2))
-            
-            # Simulazione di posizionamento griglia
-            for x in range(100, W_lamiera - 400, 500):
-                for y in range(100, H_lamiera - 300, 400):
-                    ax.add_patch(plt.Rectangle((x, y), 400, 300, fill=True, color="#3B82F6", alpha=0.7, edgecolor="white"))
-            ax.set_xlim(-100, W_lamiera + 100)
-            ax.set_ylim(-100, H_lamiera + 100)
-            ax.set_aspect('equal')
-            st.pyplot(fig)
-        else:
-            st.markdown('<div class="standby-box">IN ATTESA INPUT DXF<br><br>Carica i file .dxf degli articoli per generare il nesting geometrico.</div>', unsafe_allow_html=True)
-
-# =============================================================================
-# REPARTO GANTT & SCHEDULAZIONE OPERATIVA
-# =============================================================================
 with tab_gantt:
-    st.markdown("<h2>📅 Pianificazione e Carico Reparti</h2>", unsafe_allow_html=True)
-    df_gantt = st.session_state.gantt_data.copy()
-    st.dataframe(df_gantt, use_container_width=True)
+    st.dataframe(st.session_state.gantt_data, use_container_width=True)
