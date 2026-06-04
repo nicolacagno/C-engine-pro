@@ -10,11 +10,32 @@ from shapely import affinity
 import ezdxf
 
 st.set_page_config(page_title="C-Engine Pro", layout="wide")
+
+# STILE AGGIORNATO: ABBATTE I RIGUADRI CHIARI E FORZA IL CONTRASTO NETTO
 st.markdown("""
     <style>
-    html, body, [data-testid="stWidgetLabel"], p, label, .stMarkdown, h1, h2, h3, h4, span { color: #FFFFFF !important; }
-    .stButton>button { color: #FFFFFF !important; background-color: #FF4B4B !important; font-weight: bold; }
-    code { color: #00FF00 !important; background-color: #111111 !important; }
+    /* Sfondo e contrasto globale testi */
+    html, body, [data-testid="stWidgetLabel"], p, label, .stMarkdown, h1, h2, h3, h4, span { 
+        color: #FFFFFF !important; 
+    }
+    /* Forza la Sidebar ad essere scura per rendere leggibili i testi bianchi */
+    [data-testid="stSidebar"] {
+        background-color: #1E1E24 !important;
+    }
+    /* Campi di input testo e numeri visibili con sfondo scuro e testo bianco */
+    .stTextInput input, .stNumberInput input {
+        color: #FFFFFF !important;
+        background-color: #2D2D34 !important;
+    }
+    .stButton>button { 
+        color: #FFFFFF !important; 
+        background-color: #FF4B4B !important; 
+        font-weight: bold; 
+    }
+    code { 
+        color: #00FF00 !important; 
+        background-color: #111111 !important; 
+    }
     @media print {
         header, [data-testid="stSidebar"], .stButton, .stDownloadButton, button, .stFileUploader { display: none !important; }
         .stMainBlockContainer { background-color: #FFFFFF !important; color: #000000 !important; }
@@ -22,119 +43,112 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# TRADUZIONI IN VERTICALE PER EVITARE TRONCAMENTI DI COPIA CHAT
-TRADUZIONI = {}
-TRADUZIONI["IT"] = [
-    "📐 MetalHub - Suite Officina", "📋 Dati Commessa", "Numero Ordine", 
-    "Nome Cliente", "Data", "Piano Taglio Lamiera", "⚙️ Dimensioni Lamiera (mm)", 
-    "Larghezza X (mm)", "Altezza Y (mm)", "🔧 Parametri Utensile", 
-    "Diametro Fresa (mm)", "Distanza Sicurezza (mm)", "Passo scansione (mm)", 
-    "1. Carica File (.DXF)", "Trascina i file DXF qui", "### Quantità di Produzione", 
-    "Quantità per", "🚀 Calcola Nesting Reale", "Carica un file DXF!", 
-    "Rendimento Lamiera", "Sfrido Totale", "📋 Pezzi Mappati", 
-    "💾 Esporta", "📥 Scarica CSV", "🖨️ Stampa PDF"
-]
-TRADUZIONI["GB"] = [
-    "📐 MetalHub - Workshop Suite", "📋 Job Data", "Order Number", 
-    "Customer Name", "Date", "Sheet Cut Plan", "⚙️ Sheet Dimensions (mm)", 
-    "Width X (mm)", "Height Y (mm)", "🔧 Tool Parameters", 
-    "Cutter Diam. (mm)", "Safety Distance (mm)", "Scan Step (mm)", 
-    "1. Upload Files (.DXF)", "Drag DXF files here", "### Production Quantities", 
-    "Quantity for", "🚀 Run Real Nesting", "Upload a valid DXF!", 
-    "Sheet Yield", "Total Scrap", "📋 Mapped Parts", 
-    "💾 Export", "📥 Download CSV", "🖨️ Print PDF"
-]
-TRADUZIONI["FR"] = [
-    "📐 MetalHub - Suite d'Atelier", "📋 Données Commande", "Numéro", 
-    "Client", "Date", "Plan Découpe", "⚙️ Dimensions Tôle (mm)", 
-    "Largeur X (mm)", "Hauteur Y (mm)", "🔧 Paramètres Outil", 
-    "Diamètre Fraise (mm)", "Distance Sécurité (mm)", "Pas Balayage (mm)", 
-    "1. Charger (.DXF)", "Glissez les fichiers DXF", "### Quantités", 
-    "Quantité pour", "🚀 Imbrication Réelle", "Charger un DXF!", 
-    "Rendement Tôle", "Total Déchets", "📋 Pièces Imbriquées", 
-    "💾 Exporter", "📥 CSV", "🖨️ PDF"
-]
-TRADUZIONI["DE"] = [
-    "📐 MetalHub - Werkstatt", "📋 Auftragsdaten", "Nummer", 
-    "Kunde", "Datum", "Schneideplan", "⚙️ Blechmaße (mm)", 
-    "Breite X (mm)", "Höhe Y (mm)", "🔧 Werkzeugparameter", 
-    "Fräser (mm)", "Sicherheitsabstand (mm)", "Scanschritt (mm)", 
-    "1. DXF Hochladen", "DXF-Dateien hierher", "### Mengen", 
-    "Menge für", "🚀 Nesting Berechnen", "DXF hochladen!", 
-    "Blechausbeute", "Ausschuss", "📋 Teileliste", 
-    "💾 Export", "📥 CSV", "🖨️ PDF"
-]
-TRADUZIONI["ES"] = [
-    "📐 MetalHub - Suite de Taller", "📋 Datos Orden", "Número", 
-    "Cliente", "Fecha", "Plan de Corte", "⚙️ Dimensiones Chapa (mm)", 
-    "Ancho X (mm)", "Alto Y (mm)", "🔧 Parámetros", 
-    "Diámetro Fresa (mm)", "Distancia Seg. (mm)", "Paso Escaneo (mm)", 
-    "1. Cargar (.DXF)", "Arrastre los DXF aquí", "### Quantidades", 
-    "Cantidad para", "🚀 Nesting Real", "¡Cargue un DXF!", 
-    "Rendimento Chapa", "Chatarra Total", "📋 Piezas Mapeadas", 
-    "💾 Exportar", "📥 CSV", "🖨️ PDF"
-]
-TRADUZIONI["CZ"] = [
-    "📐 MetalHub - Dílna", "📋 Údaje Zakázky", "Číslo", 
-    "Zákazník", "Datum", "Plán Řezání", "⚙️ Rozměry Plechu (mm)", 
-    "Šířka X (mm)", "Výška Y (mm)", "🔧 Nástroj", 
-    "Průměr Frézy (mm)", "Bezpečnost (mm)", "Krok (mm)", 
-    "1. Načíst (.DXF)", "Sem přetáhněte DXF", "### Množství", 
-    "Množství pro", "🚀 Spustit Skládání", "Načtěte DXF!", 
-    "Výtěžnost Plechu", "Celkový Odpad", "📋 Umístěné Díly", 
-    "💾 Export", "📥 CSV", "🖨️ PDF"
-]
-TRADUZIONI["HU"] = [
-    "📐 MetalHub - Műhely", "📋 Rendelés", "Szám", 
-    "Ügyfél", "Dátum", "Vágási Terv", "⚙️ Lemezméretek (mm)", 
-    "Szélesség X (mm)", "Magasság Y (mm)", "🔧 Szerszám", 
-    "Maró (mm)", "Biztonság (mm)", "Lépés (mm)", 
-    "1. DXF Feltöltés", "Húzza ide a DXF-et", "### Mennyiségek", 
-    "Mennyiség ehhez:", "🚀 Beágyazás Indítása", "Töltsön fel DXF-et!", 
-    "Lemezkihasználás", "Hulladék", "📋 Alkatrészek", 
-    "💾 Export", "📥 CSV", "🖨️ PDF"
-]
-TRADUZIONI["RO"] = [
-    "📐 MetalHub - Atelier", "📋 Date Comandă", "Număr", 
-    "Client", "Dată", "Plan Tăiere", "⚙️ Dimensiuni Tablă (mm)", 
-    "Lățime X (mm)", "Înălțime Y (mm)", "🔧 Parametri Sculă", 
-    "Diametru Freză (mm)", "Siguranță (mm)", "Pas Scanare (mm)", 
-    "1. Încărcare (.DXF)", "Trageți DXF aici", "### Cantități", 
-    "Cantitate pentru", "🚀 Imbricare Reală", "Încărcați DXF!", 
-    "Randament Tablă", "Deșeu Total", "📋 Piese Imbricate", 
-    "💾 Export", "📥 CSV", "🖨️ PDF"
-]
-TRADUZIONI["PT"] = [
-    "📐 MetalHub - Oficina", "📋 Dados Pedido", "Número", 
-    "Cliente", "Data", "Plano Corte", "⚙️ Dimensões Chapa (mm)", 
-    "Largura X (mm)", "Altura Y (mm)", "🔧 Ferramenta", 
-    "Diâmetro Fresa (mm)", "Segurança (mm)", "Passo (mm)", 
-    "1. Carregar (.DXF)", "Arraste os DXF aqui", "### Quantidades", 
-    "Quantidade para", "🚀 Nesting Real", "Carregue um DXF!", 
-    "Rendimento Chapa", "Sucata Total", "📋 Peças Mapeadas", 
-    "💾 Exportar", "📥 Portuguese CSV", "🖨️ PDF"
-]
+# DIZIONARIO ESPLICITO PER EVITARE BUG DI STRUTTURA
+TRADUZIONI = {
+    "IT": {
+        "titolo": "📐 MetalHub - Suite Officina", "dati_commessa": "📋 Dati Commessa", "ordine": "Numero Ordine", 
+        "cliente": "Nome Cliente", "data": "Data", "sottotitolo": "Piano Taglio Lamiera", "param_lamiera": "⚙️ Dimensioni Lamiera (mm)", 
+        "larg": "Larghezza X (mm)", "alt": "Altezza Y (mm)", "param_macchina": "🔧 Parametri Utensile", "fresa": "Diametro Fresa (mm)", 
+        "sicurezza": "Distanza Sicurezza (mm)", "passo": "Passo scansione (mm)", "carica_titolo": "1. Carica File (.DXF)", 
+        "carica_input": "Trascina i file DXF qui", "qta_titolo": "### Quantità di Produzione", "qta_label": "Quantità per il file:", 
+        "btn_calcola": "🚀 Calcola Nesting Reale", "errore_no_file": "Carica un file DXF!", "resa": "Rendimento Lamiera", 
+        "sfrido": "Sfrido Totale", "tab_titolo": "📋 Pezzi Mappati", "esporta": "💾 Esporta", "btn_csv": "📥 Scarica CSV", "btn_pdf": "🖨️ Stampa PDF"
+    },
+    "GB": {
+        "titolo": "📐 MetalHub - Workshop Suite", "dati_commessa": "📋 Job Data", "ordine": "Order Number", 
+        "cliente": "Customer Name", "data": "Date", "sottotitolo": "Sheet Cut Plan", "param_lamiera": "⚙️ Sheet Dimensions (mm)", 
+        "larg": "Width X (mm)", "alt": "Height Y (mm)", "param_macchina": "🔧 Tool Parameters", "fresa": "Cutter Diam. (mm)", 
+        "sicurezza": "Safety Distance (mm)", "passo": "Scan Step (mm)", "carica_titolo": "1. Upload Files (.DXF)", 
+        "carica_input": "Drag DXF files here", "qta_titolo": "### Production Quantities", "qta_label": "Quantity for file:", 
+        "btn_calcola": "🚀 Run Real Nesting", "errore_no_file": "Upload a valid DXF!", "resa": "Sheet Yield", 
+        "sfrido": "Total Scrap", "tab_titolo": "📋 Mapped Parts", "esporta": "💾 Export", "btn_csv": "📥 Download CSV", "btn_pdf": "🖨️ Print PDF"
+    }
+}
+# PROSEGUIMENTO DIZIONARIO LINGUE (ESTRAZIONE ESPLICITA)
+TRADUZIONI["FR"] = {
+    "titolo": "📐 MetalHub - Suite d'Atelier", "dati_commessa": "📋 Données Commande", "ordine": "Numéro", 
+    "cliente": "Client", "data": "Date", "sottotitolo": "Plan Découpe", "param_lamiera": "⚙️ Dimensions Tôle (mm)", 
+    "larg": "Largeur X (mm)", "alt": "Hauteur Y (mm)", "param_macchina": "🔧 Paramètres Outil", "fresa": "Diamètre Fraise (mm)", 
+    "sicurezza": "Distance Sécurité (mm)", "passo": "Pas Balayage (mm)", "carica_titolo": "1. Charger (.DXF)", 
+    "carica_input": "Glissez les fichiers DXF", "qta_titolo": "### Quantités", "qta_label": "Quantité pour:", 
+    "btn_calcola": "🚀 Imbrication Réelle", "errore_no_file": "Charger un DXF!", "resa": "Rendement Tôle", 
+    "sfrido": "Total Déchets", "tab_titolo": "📋 Pièces Imbriquées", "esporta": "💾 Exporter", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+}
+TRADUZIONI["DE"] = {
+    "titolo": "📐 MetalHub - Werkstatt", "dati_commessa": "📋 Auftragsdaten", "ordine": "Nummer", 
+    "cliente": "Kunde", "data": "Datum", "sottotitolo": "Schneideplan", "param_lamiera": "⚙️ Blechmaße (mm)", 
+    "larg": "Breite X (mm)", "alt": "Höhe Y (mm)", "param_macchina": "🔧 Werkzeugparameter", "fresa": "Fräser (mm)", 
+    "sicurezza": "Sicherheitsabstand (mm)", "passo": "Scanschritt (mm)", "carica_titolo": "1. DXF Hochladen", 
+    "carica_input": "DXF-Dateien hierher", "qta_titolo": "### Mengen", "qta_label": "Menge für:", 
+    "btn_calcola": "🚀 Nesting Berechnen", "errore_no_file": "DXF hochladen!", "resa": "Blechausbeute", 
+    "sfrido": "Ausschuss", "tab_titolo": "📋 Teileliste", "esporta": "💾 Export", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+}
+TRADUZIONI["ES"] = {
+    "titolo": "📐 MetalHub - Suite de Taller", "dati_commessa": "📋 Datos Orden", "ordine": "Número", 
+    "cliente": "Cliente", "fecha": "Fecha", "sottotitolo": "Plan de Corte", "param_lamiera": "⚙️ Dimensiones Chapa (mm)", 
+    "larg": "Ancho X (mm)", "alt": "Alto Y (mm)", "param_macchina": "🔧 Parámetros", "fresa": "Diámetro Fresa (mm)", 
+    "sicurezza": "Distancia Seg. (mm)", "passo": "Paso Escaneo (mm)", "carica_titolo": "1. Cargar (.DXF)", 
+    "carica_input": "Arrastre los DXF aquí", "qta_titolo": "### Cantidades", "qta_label": "Cantidad para:", 
+    "btn_calcola": "🚀 Nesting Real", "errore_no_file": "¡Cargue un DXF!", "resa": "Rendimiento Chapa", 
+    "sfrido": "Chatarra Total", "tab_titolo": "📋 Piezas Mapeadas", "esporta": "💾 Exportar", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+}
+TRADUZIONI["CZ"] = {
+    "titolo": "📐 MetalHub - Dílna", "dati_commessa": "📋 Údaje Zakázky", "ordine": "Číslo", 
+    "cliente": "Zákazník", "data": "Datum", "sottotitolo": "Plán Řezání", "param_lamiera": "⚙️ Rozměry Plechu (mm)", 
+    "larg": "Šířka X (mm)", "alt": "Výška Y (mm)", "param_macchina": "🔧 Nástroj", "fresa": "Průměr Frézy (mm)", 
+    "sicurezza": "Bezpečnost (mm)", "passo": "Krok (mm)", "carica_titolo": "1. Načíst (.DXF)", 
+    "carica_input": "Sem přetáhněte DXF", "qta_titolo": "### Množství", "qta_label": "Množství pro:", 
+    "btn_calcola": "🚀 Spustit Skládání", "errore_no_file": "Načtěte DXF!", "resa": "Výtěžnost Plechu", 
+    "sfrido": "Celkový Odpad", "tab_titolo": "📋 Umístěné Díly", "esporta": "💾 Export", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+}
+TRADUZIONI["HU"] = {
+    "titolo": "📐 MetalHub - Műhely", "dati_commessa": "📋 Rendelés", "ordine": "Szám", 
+    "cliente": "Ügyfél", "data": "Dátum", "sottotitolo": "Vágási Terv", "param_lamiera": "⚙️ Lemezméretek (mm)", 
+    "larg": "Szélesség X (mm)", "alt": "Magasság Y (mm)", "param_macchina": "🔧 Szerszám", "fresa": "Maró (mm)", 
+    "sicurezza": "Biztonság (mm)", "passo": "Lépés (mm)", "carica_titolo": "1. DXF Feltöltés", 
+    "carica_input": "Húzza ide a DXF-et", "### Mennyiségek", "qta_label": "Mennyiség ehhez:", 
+    "btn_calcola": "🚀 Beágyazás Indítása", "errore_no_file": "Töltsön fel DXF-et!", "resa": "Lemezkihasználás", 
+    "sfrido": "Hulladék", "tab_titolo": "📋 Alkatrészek", "esporta": "💾 Export", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+}
+TRADUZIONI["RO"] = {
+    "titolo": "📐 MetalHub - Atelier", "dati_commessa": "📋 Date Comandă", "ordine": "Număr", 
+    "cliente": "Client", "data": "Dată", "sottotitolo": "Plan Tăiere", "param_lamiera": "⚙️ Dimensiuni Tablă (mm)", 
+    "larg": "Lățime X (mm)", "alt": "Înălțime Y (mm)", "param_macchina": "🔧 Parametri Sculă", "fresa": "Diametru Freză (mm)", 
+    "sicurezza": "Siguranță (mm)", "passo": "Pas Scanare (mm)", "carica_titolo": "1. Încărcare (.DXF)", 
+    "carica_input": "Trageți DXF aici", "qta_titolo": "### Cantități", "qta_label": "Cantitate pentru:", 
+    "btn_calcola": "🚀 Imbricare Reală", "errore_no_file": "Încărcați DXF!", "resa": "Randament Tablă", 
+    "sfrido": "Deșeu Total", "tab_titolo": "📋 Piese Imbricate", "esporta": "💾 Export", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+}
+TRADUZIONI["PT"] = {
+    "titolo": "📐 MetalHub - Oficina", "dati_commessa": "📋 Dados Pedido", "ordine": "Número", 
+    "cliente": "Cliente", "data": "Data", "sottotitolo": "Plano Corte", "param_lamiera": "⚙️ Dimensões Chapa (mm)", 
+    "larg": "Largura X (mm)", "alt": "Altura Y (mm)", "param_macchina": "🔧 Ferramenta", "fresa": "Diâmetro Fresa (mm)", 
+    "sicurezza": "Segurança (mm)", "passo": "Passo (mm)", "carica_titolo": "1. Carregar (.DXF)", 
+    "carica_input": "Arraste os DXF aqui", "qta_titolo": "### Quantidades", "qta_label": "Quantidade para:", 
+    "btn_calcola": "🚀 Nesting Real", "errore_no_file": "Carregue um DXF!", "resa": "Rendimento Chapa", 
+    "sfrido": "Sucata Total", "tab_titolo": "📋 Peças Mapeadas", "esporta": "💾 Exportar", "btn_csv": "📥 CSV", "btn_pdf": "🖨️ PDF"
+}
 
 st.sidebar.markdown("### 👤 User Account & Setup")
 lingua = st.sidebar.selectbox("🌍 Language", options=list(TRADUZIONI.keys()), format_func=lambda x: {"IT":"🇮🇹 IT","GB":"🇬🇧 GB","FR":"🇫🇷 FR","DE":"🇩🇪 DE","ES":"🇪🇸 ES","CZ":"🇨🇿 CZ","HU":"🇭🇺 HU","RO":"🇷🇴 RO","PT":"🇵🇹 PT"}[x])
-Txt = TRADUZIONI[lingua]
+L = TRADUZIONI[lingua]
 
-st.title(Txt[0])
-st.subheader(Txt[1])
+st.title(L["titolo"])
+st.subheader(L["dati_commessa"])
 c1, c2, c3 = st.columns(3)
-with c1: num_ordine = st.text_input(Txt[2], value="ORD-2D-001")
-with c2: nome_cliente = st.text_input(Txt[3], value="Customer SpA")
-with c3: data_commessa = st.date_input(Txt[4], date.today())
+with c1: num_ordine = st.text_input(L["ordine"], value="ORD-2D-001")
+with c2: nome_cliente = st.text_input(L["cliente"], value="Customer SpA")
+with c3: data_commessa = st.date_input(L["data"], date.today())
 
-st.markdown(f'<div style="border:1px solid #FF4B4B;padding:10px;border-radius:5px;background-color:#222222;margin-bottom:15px;"><p style="margin:0;"><b>{Txt[5]}:</b> {num_ordine} | <b>{Txt[3]}:</b> {nome_cliente}</p></div>', unsafe_allow_html=True)
+st.markdown(f'<div style="border:1px solid #FF4B4B;padding:10px;border-radius:5px;background-color:#222222;margin-bottom:15px;"><p style="margin:0;"><b>{L["sottotitolo"]}:</b> {num_ordine} | <b>{L["cliente"]}:</b> {nome_cliente}</p></div>', unsafe_allow_html=True)
 
-st.sidebar.header(Txt[6])
-W_lamiera = st.sidebar.number_input(Txt[7], value=1000, step=100)
-H_lamiera = st.sidebar.number_input(Txt[8], value=1000, step=100)
-st.sidebar.header(Txt[9])
-diametro_utensile = st.sidebar.number_input(Txt[10], value=6.0, step=1.0)
-distanza_sicurezza = st.sidebar.number_input(Txt[11], value=4.0, step=1.0)
-passo_scansione = st.sidebar.slider(Txt[12], min_value=2, max_value=25, value=10, step=1)
+st.sidebar.header(L["param_lamiera"])
+W_lamiera = st.sidebar.number_input(L["larg"], value=1000, step=100)
+H_lamiera = st.sidebar.number_input(L["alt"], value=1000, step=100)
+st.sidebar.header(L["param_macchina"])
+diametro_utensile = st.sidebar.number_input(L["fresa"], value=6.0, step=1.0)
+distanza_sicurezza = st.sidebar.number_input(L["sicurezza"], value=4.0, step=1.0)
+passo_scansione = st.sidebar.slider(L["passo"], min_value=2, max_value=25, value=10, step=1)
 offset_totale = (diametro_utensile / 2.0) + distanza_sicurezza
 
 def estrai_e_azzera_poligono_da_dxf(file_bytes):
@@ -146,7 +160,7 @@ def estrai_e_azzera_poligono_da_dxf(file_bytes):
         for e in msp.query('LINE'):
             linee.append(LineString([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)]))
         for e in msp.query('LWPOLYLINE POLYLINE'):
-            pts = [(p, p) for p in e.vertices()]
+            pts = [(p.dxf.location.x, p.dxf.location.y) if hasattr(p, 'dxf') else (p, p) for p in e.vertices()]
             if len(pts) >= 3: linee.append(LineString(pts))
         unione = unary_union(linee)
         poly = unione if unione.geom_type == 'Polygon' else Polygon([c for l in linee for c in l.coords])
@@ -155,12 +169,12 @@ def estrai_e_azzera_poligono_da_dxf(file_bytes):
             return affinity.translate(poly, xoff=-mx, yoff=-my)
         return None
     except: return None
-st.header(Txt[13])
-file_caricati = st.file_uploader(Txt[14], type=["dxf"], accept_multiple_files=True)
+st.header(L["carica_titolo"])
+file_caricati = st.file_uploader(L["carica_input"], type=["dxf"], accept_multiple_files=True)
 lista_particolari = []
 
 if file_caricati:
-    st.write(Txt[15])
+    st.write(L["qta_titolo"])
     for f in file_caricati:
         poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
         if poly:
@@ -168,27 +182,40 @@ if file_caricati:
             col1, col2 = st.columns(2)
             with col1:
                 st.write(f"📄 **{f.name}**")
-                st.caption(f"{round(xx-mx)} x {round(yx-my)} mm")
+                st.caption(f"Dimensione reale: {round(xx-mx)} x {round(yx-my)} mm")
             with col2:
-                qta = st.number_input(f"{Txt[16]} {f.name}", min_value=1, value=10, key=f"q_{f.name}")
+                # ETICHETTA DI DIALOGO COMPLETA E CAMPO QUANTITÀ DEFINITO
+                qta = st.number_input(f"{L['qta_label']} {f.name}", min_value=1, value=10, key=f"q_{f.name}")
             lista_particolari.append({"nome": f.name.replace(".dxf", ""), "poly": poly, "qta": int(qta), "area": poly.area})
 
-if st.button(Txt[17], type="primary"):
-    if not lista_particolari: st.error(Txt[18])
+if st.button(L["btn_calcola"], type="primary"):
+    if not lista_particolari: 
+        st.error(L["errore_no_file"])
     else:
         coda = []
         for p in lista_particolari:
-            for _ in range(p["qta"]): coda.append({"nome": p["nome"], "poly": p["poly"], "area": p["area"]})
+            for _ in range(p["qta"]): 
+                coda.append({"nome": p["nome"], "poly": p["poly"], "area": p["area"]})
         coda.sort(key=lambda x: x["area"], reverse=True)
-        bordo_utile = Polygon([(offset_totale, offset_totale), (W_lamiera - offset_totale, offset_totale), (W_lamiera - offset_totale, H_lamiera - offset_totale), (offset_totale, H_lamiera - offset_totale)])
+        
+        bordo_utile = Polygon([
+            (offset_totale, offset_totale), 
+            (W_lamiera - offset_totale, offset_totale), 
+            (W_lamiera - offset_totale, H_lamiera - offset_totale), 
+            (offset_totale, H_lamiera - offset_totale)
+        ])
+        
         piazzati, report = [], []
         area_usata = 0
         fig, ax = plt.subplots(figsize=(10, 10))
         ax.set_facecolor('#151515')
         fig.patch.set_facecolor('#111111')
         ax.add_patch(plt.Rectangle((0, 0), W_lamiera, H_lamiera, fill=False, color="#FF4B4B", linewidth=3))
-        colori = cm.get_cmap('tab10', len(list(set([i["nome"] for i in coda]))))
-        c_dict = {n: colori(idx) for idx, n in enumerate(list(set([i["nome"] for i in coda])))}
+        
+        nomi_unici = list(set([i["nome"] for i in coda]))
+        colori = cm.get_cmap('tab10', len(nomi_unici))
+        c_dict = {n: colori(idx) for idx, n in enumerate(nomi_unici)}
+        
         for item in coda:
             p_orig = item["poly"]
             ok = False
@@ -212,18 +239,24 @@ if st.button(Txt[17], type="primary"):
                                 ax.text(p_real.centroid.x, p_real.centroid.y, item["nome"][:8], color="black", fontsize=8, weight="bold", ha="center", va="center", bbox=dict(boxstyle='round,pad=0.1', fc='white', alpha=0.6, ec='none'))
                                 report.append({"Articolo": item["nome"], "Rotazione": f"{ang}°"})
                                 break
+                                
         ax.set_xlim(-50, W_lamiera + 50)
         ax.set_ylim(-50, H_lamiera + 50)
         ax.set_aspect('equal')
         st.pyplot(fig)
+        
         rend = (area_usata / (W_lamiera * H_lamiera)) * 100
         m1, m2 = st.columns(2)
-        with m1: st.metric(Txt[19], f"{rend:.2f}%")
-        with m2: st.metric(Txt[20], f"{100-rend:.2f}%")
-        st.subheader(Txt[21])
+        with m1: st.metric(L["resa"], f"{rend:.2f}%")
+        with m2: st.metric(L["sfrido"], f"{100-rend:.2f}%")
+        
+        st.subheader(L["tab_titolo"])
         df_rep = pd.DataFrame(report)
         st.dataframe(df_rep, use_container_width=True)
-        st.header(Txt[22])
+        
+        st.header(L["esporta"])
         e1, e2 = st.columns(2)
-        with e1: st.download_button(Txt[23], data=df_rep.to_csv(index=False).encode('utf-8'), file_name='Nesting.csv', mime='text/csv')
-        with e2: st.markdown(f'<button onclick="window.print()" style="width:100%;height:38px;background-color:#4CAF50;color:white;border:none;border-radius:4px;font-weight:bold;cursor:pointer;">{Txt[24]}</button>', unsafe_allow_html=True)
+        with e1: 
+            st.download_button(L["btn_csv"], data=df_rep.to_csv(index=False).encode('utf-8'), file_name='Nesting.csv', mime='text/csv')
+        with e2: 
+            st.markdown(f'<button onclick="window.print()" style="width:100%;height:38px;background-color:#4CAF50;color:white;border:none;border-radius:4px;font-weight:bold;cursor:pointer;">{L["btn_pdf"]}</button>', unsafe_allow_html=True)
