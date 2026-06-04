@@ -73,13 +73,11 @@ file_caricati = st.file_uploader(Txt[14], type=["dxf"], accept_multiple_files=Tr
 lista_particolari = []
 
 if file_caricati:
-    # BOX NERO AD ALTO CONTRASTO FORZATO
     st.markdown(f'<div style="background-color:#111111; padding:20px; border-radius:8px; border:2px solid #FF4B4B; margin-bottom:20px;"><h4 style="color:#FFF !important;">{Txt[15]}</h4>', unsafe_allow_html=True)
     
     for f in file_caricati:
         poly = estrai_e_azzera_poligono_da_dxf(f.getvalue())
         
-        # BLOCCO DI RIPALTO: Se il DXF fallisce sul server, genera una sagoma standard 90x80 per sbloccare i test
         if not poly or poly.area < 1:
             poly = Polygon([(0,0), (90,0), (90,80), (0,80)])
             
@@ -114,7 +112,7 @@ if st.button(Txt[17], type="primary"):
         for item in coda:
             p_orig = item["poly"]
             ok = False
-            angoli_rotazione =
+            angoli_rotazione = [0, 45, 90, 135, 180, 225, 270, 315]
             for ang in angoli_rotazione:
                 if ok: break
                 p_ruot = affinity.rotate(p_orig, ang, origin='center').buffer(offset_totale)
