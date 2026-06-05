@@ -7,7 +7,7 @@ import matplotlib.patches as patches
 from datetime import datetime
 
 # =============================================================================
-# STATO DELLA SESSIONE (Previene reset e gestisce magazzini e pezzi)
+# STATO DELLA SESSIONE (Persistenza magazzino e pezzi tra i ricaricamenti)
 # =============================================================================
 if "results_1d" not in st.session_state:
     st.session_state.results_1d = None
@@ -25,13 +25,12 @@ if "magazzino_2d" not in st.session_state:
         {"LARGHEZZA X (mm)": 2440, "ALTEZZA Y (mm)": 1220, "SPESSORE (mm)": 4.0, "QTY": 2}
     ])
 
-# Struttura per tracciare i pezzi caricati da DXF
 if "pezzi_2d" not in st.session_state:
     st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
 
 st.set_page_config(page_title="MetalHub Suite Pro", layout="wide", initial_sidebar_state="expanded")
 
-# CSS Interfaccia Dark Premium
+# CSS Premium Dark Interface
 st.markdown("""
 <style>
     .stApp, html, body, [data-testid='stSidebar'], [data-testid='stHeader'] { background-color: #1A1A1A !important; }
@@ -51,19 +50,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# EXPORT MANAGER - CORREZIONE COMPLETA FILE NON CORROTTI
+# EXPORT MANAGERS (Prevenzione totale file corrotti)
 # =============================================================================
 def get_valid_excel_bytes(df):
-    """Genera un file tabulare puro codificato correttamente per Excel senza causare corruzione dati."""
     csv_string = df.to_csv(index=False, sep='\t')
-    # L'aggiunta del Byte Order Mark (BOM) impedisce a Excel di corrompere codifiche e tabelle
     return '\ufeff'.encode('utf-8') + csv_string.encode('utf-8')
 
 def get_valid_pdf_bytes(title, data_summary, items_list):
-    """Costruisce un documento PDF standard compatibile con tutti i visualizzatori."""
     now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-    
-    # Costruzione dello stream grafico interno
     stream_content = f"BT\n/Helvetica-Bold 16 Tf\n50 780 Td\n({title}) Tj\n"
     stream_content += f"0 -22 Td\n/Helvetica 10 Tf\n(Data Export: {now_str}) Tj\n0 -35 Td\n"
     stream_content += "/Helvetica-Bold 12 Tf\n(DATI DI RIEPILOGO:) Tj\n0 -15 Td\n/Helvetica 10 Tf\n"
@@ -86,10 +80,12 @@ def get_valid_pdf_bytes(title, data_summary, items_list):
     return pdf_structure.encode('utf-8', errors='ignore')
 
 # =============================================================================
-# STRUTTURA PRINCIPALE E CAMBIO LINGUA
+# DIZIONARIO DI TRADUZIONE ESTESO (IT, EN, DE, FR, ES, RO, PT, HU, PL)
 # =============================================================================
-lang = st.sidebar.selectbox("🌐 SELEZIONE LINGUA", ["IT", "EN"])
-if st.sidebar.button("🔄 RESET GENERALE COMMESSE E STOCK"):
+lang = st.sidebar.selectbox("🌐 LINGUA / LANGUAGE / SPRACHE / LANGUE / IDIOMA / LIMBĂ / LÍNGUA / NYELV / JĘZYK", 
+                            ["IT", "EN", "DE", "FR", "ES", "RO", "PT", "HU", "PL"])
+
+if st.sidebar.button("🔄 RESET GENERAL"):
     st.session_state.results_1d = None
     st.session_state.results_2d = None
     if "pezzi_2d" in st.session_state:
@@ -134,6 +130,139 @@ TXT = {
         "area_min_2d": "MINIMUM REUSABLE AREA (m²)",
         "salva_scarto": "📦 SAVE QUALIFIED SCRAP TO STOCK",
         "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts, set the required quantities and execute nesting."
+    },
+    "DE": {
+        "title": "Geometrisches Verschachteln & Optimierung",
+        "header_1d": "🪚 1D VERSCHACHTELUNG - STANGEN",
+        "header_2d": "📐 2D VERSCHACHTELUNG - BLECHE",
+        "commessa": "📋 AUFTRAGSDETAILS",
+        "ordine": "BESTELLNUMMER",
+        "cliente": "KUNDENAME",
+        "parametri_macchina": "🔧 MASCHINENPARAMETER",
+        "magazzino": "📦 VERFÜGBARES LAGER (AUTOMATISCH AKTUALISIERT)",
+        "tagli": "✂️ SCHNITTLISTE",
+        "esegui": "🚀 VERSCHACHTELUNG STARTEN & LAGER AKTUALISIEREN",
+        "spessore": "BLECHDICKE (mm)",
+        "bordo": "RANDABSTAND (mm)",
+        "esporta": "💾 PRODUKTIONSDATEN EXPORTIEREN",
+        "scarto_min_1d": "MINDESTLÄNGE WIEDERVERWENDUNG (mm)",
+        "area_min_2d": "MINDESTFLÄCHE RESTE (m²)",
+        "salva_scarto": "📦 RESTSTÜCK INS LAGER ÜBERNEHMEN",
+        "standby_2d": "WARTEN AUF DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung."
+    },
+    "FR": {
+        "title": "Imbrication Géométrique & Optimisation",
+        "header_1d": "🪚 IBRICATION 1D - BARRES",
+        "header_2d": "📐 IBRICATION 2D - TÔLES",
+        "commessa": "📋 DÉTAILS DU COMMANDE",
+        "ordine": "NUMÉRO DE COMMANDE",
+        "cliente": "NOM DU CLIENT",
+        "parametri_macchina": "🔧 PARAMÈTRES MACHINE",
+        "magazzino": "📦 INVENTAIRE DISPONIBILE (MIS À JOUR AUTO)",
+        "tagli": "✂️ LISTE DE COUPE",
+        "esegui": "🚀 LANCER L'IMBRICATION ET METTRE À JOUR LE STOCK",
+        "spessore": "ÉPAISSEUR TÔLE (mm)",
+        "bordo": "MARGE PÉRIMÉTRIQUE (mm)",
+        "esporta": "💾 EXPORTER LES DONNÉES DE PRODUCTION",
+        "scarto_min_1d": "CHUTE MINIMUM RÉCUPÉRABLE (mm)",
+        "area_min_2d": "SURFACE MINIMUM RÉCUPÉRABLE (m²)",
+        "salva_scarto": "📦 AJOUTER LA CHUTE QUALIFIÉE AU STOCK",
+        "standby_2d": "EN ATTENTE DE FICHIERS DXF\n\nChargez les fichiers géométriques .dxf, définissez les quantités par pièce et lancez l'imbrication."
+    },
+    "ES": {
+        "title": "Nesting Geométrico y Optimización",
+        "header_1d": "🪚 NESTING 1D - BARRAS",
+        "header_2d": "📐 NESTING 2D - CHAPAS",
+        "commessa": "📋 DATOS DE LA ORDEN",
+        "ordine": "NÚMERO DE ORDEN",
+        "cliente": "NOMBRE DEL CLIENTE",
+        "parametri_macchina": "🔧 PARÁMETROS DE LA MÁQUINA",
+        "magazzino": "📦 INVENTARIO DISPONIBLE (ACTUALIZADO AUTO)",
+        "tagli": "✂️ LISTA DE CORTES",
+        "esegui": "🚀 EJECUTAR NESTING Y ACTUALIZAR STOCK",
+        "spessore": "ESPESOR DE CHAPA (mm)",
+        "bordo": "MARGEN PERIMETRAL (mm)",
+        "esporta": "💾 EXPORTAR DATOS DE PRODUCCIÓN",
+        "scarto_min_1d": "LONGITUD MÍNIMA REUTILIZABLE (mm)",
+        "area_min_2d": "ÁREA MÍNIMA REUTILIZABLE (m²)",
+        "salva_scarto": "📦 AÑADIR RECORTE CALIFICADO AL STOCK",
+        "standby_2d": "ESPERANDO ARCHIVOS DXF\n\nCargue los archivos .dxf de las piezas, defina las cantidades requeridas y ejecute el nesting."
+    },
+    "RO": {
+        "title": "Nesting Geometric și Optimizare",
+        "header_1d": "🪚 NESTING 1D - BARE",
+        "header_2d": "📐 NESTING 2D - TABLE",
+        "commessa": "📋 DETALII COMANDĂ",
+        "ordine": "NUMĂR COMANDĂ",
+        "cliente": "NUME CLIENT",
+        "parametri_macchina": "🔧 PARAMETRII UTILAJULUI",
+        "magazzino": "📦 STOC DISPONIBIL (ACTUALIZARE AUTOMATĂ)",
+        "tagli": "✂️ LISTĂ DE TĂIERE",
+        "esegui": "🚀 EXECUTE NESTING ȘI SCADE DIN STOC",
+        "spessore": "GROSIME FOAIE (mm)",
+        "bordo": "MARGINE PERIMETRALĂ (mm)",
+        "esporta": "💾 EXPORTĂ DATELE DE PRODUCȚIE",
+        "scarto_min_1d": "LUNGIME MINIMĂ REUTILIZABILĂ (mm)",
+        "area_min_2d": "SUPRAFAȚĂ MINIMĂ REUTILIZABILĂ (m²)",
+        "salva_scarto": "📦 ADAUGĂ DEȘEUL CALIFICAT ÎN STOC",
+        "standby_2d": "ÎN AȘTEPTAREA FIȘIERELOR DXF\n\nÎncărcați fișierele geometrice .dxf, setați cantitățile necesare pentru fiecare piesă și porniți optimizarea."
+    },
+    "PT": {
+        "title": "Nesting Geométrico e Otimização",
+        "header_1d": "🪚 NESTING 1D - BARRAS",
+        "header_2d": "📐 NESTING 2D - CHAPAIS",
+        "commessa": "📋 DETALHES DA ORDEM",
+        "ordine": "NÚMERO DA ORDEM",
+        "cliente": "NOME DO CLIENTE",
+        "parametri_macchina": "🔧 PARÂMETROS DA MÁQUINA",
+        "magazzino": "📦 ESTOQUE DISPONÍVEL (ATUALIZAÇÃO AUTO)",
+        "tagli": "✂️ LISTA DE CORTES",
+        "esegui": "🚀 CALCULAR NESTING E ATUALIZAR ESTOQUE",
+        "spessore": "ESPESSURA DA CHAPA (mm)",
+        "bordo": "MARGEM PERIMETRAL (mm)",
+        "esporta": "💾 EXPORTAR DADOS DE PRODUÇÃO",
+        "scarto_min_1d": "COMPRIMENTO MÍNIMO REUTILIZÁVEL (mm)",
+        "area_min_2d": "ÁREA MÍNIMA REUTILIZÁVEL (m²)",
+        "salva_scarto": "📦 ADICIONAR RECORTE QUALIFICADO AO ESTOQUE",
+        "standby_2d": "AGUARDANDO ARQUIVOS DXF\n\nCarregue os arquivos .dxf das peças, defina as quantidades necessárias e execute o nesting."
+    },
+    "HU": {
+        "title": "Geometriai fésülés és optimalizálás",
+        "header_1d": "🪚 1D FÉSÜLÉS - RUDAK",
+        "header_2d": "📐 2D FÉSÜLÉS - LEMEZEK",
+        "commessa": "📋 MEGRENDELÉS RÉSZLETEI",
+        "ordine": "RENDELÉSSZÁM",
+        "cliente": "ÜGYFÉL NEVE",
+        "parametri_macchina": "🔧 GÉPI PARAMÉTEREK",
+        "magazzino": "📦 ELÉRHETŐ RAKTÁRKÉSZLET (AUTO FRISSÍTÉS)",
+        "tagli": "✂️ VÁGÁSI LISTA",
+        "esegui": "🚀 FÉSÜLÉS INDÍTÁSA ÉS KÉSZLET LEVONÁSA",
+        "spessore": "LEMEZVASTAGSÁG (mm)",
+        "bordo": "PEREMEZÉSI MARGÓ (mm)",
+        "esporta": "💾 TERMELÉSI ADATOK EXPORTÁLÁSA",
+        "scarto_min_1d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ HOSSZ (mm)",
+        "area_min_2d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ TERÜLET (m²)",
+        "salva_scarto": "📦 MINŐSÍTETT SELEJT RAKTÁRBA MENTÉSE",
+        "standby_2d": "DXF FÁJLOKRA VÁR\n\nTöltse fel a .dxf geometriai fájlokat, adja meg a darabszámokat, és indítsa el a fésülést."
+    },
+    "PL": {
+        "title": "Nesting Geometryczny i Optymalizacja",
+        "header_1d": "🪚 NESTING 1D - PRĘTY / PROFILE",
+        "header_2d": "📐 NESTING 2D - BLACHY",
+        "commessa": "📋 SZCZEGÓŁY ZLECENIA",
+        "ordine": "NUMER ZLECENIA",
+        "cliente": "NAZWA KLIENTA",
+        "parametri_macchina": "🔧 PARAMETRY MASZYNY",
+        "magazzino": "📦 DOSTĘPNY MAGAZYN (AUTOMATYCZNA AKTUALIZACJA)",
+        "tagli": "✂️ LISTA CIĘĆ",
+        "esegui": "🚀 URUCHOM NESTING I ODLICZ Z MAGAZYNU",
+        "spessore": "GRUBOŚĆ BLACHY (mm)",
+        "bordo": "MARGINES OBWODOWY (mm)",
+        "esporta": "💾 EKSPORTUJ DANE PRODUKCYJNE",
+        "scarto_min_1d": "MINIMALNA DŁUGOŚĆ ODPADU UŻYTECZNEGO (mm)",
+        "area_min_2d": "MINIMALNA POWIERZCHNIA ODPADU UŻYTECZNEGO (m²)",
+        "salva_scarto": "📦 DODAJ UŻYTECZNY ODPAD DO MAGAZYNU",
+        "standby_2d": "OCZEKIWANIE NA PLIKI DXF\n\nZaładuj pliki geometryczne .dxf, ustaw ilości dla każdego elementu i uruchom optymalizację."
     }
 }
 T = TXT[lang]
@@ -189,7 +318,7 @@ with tab_1d:
             
             for pezzo in reqs:
                 inserito = False
-                for b in piani_barre:
+                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -209,7 +338,6 @@ with tab_1d:
                         "spazio_rimasto": lunghezza_scelta - intestazione_barra - pezzo
                     })
             
-            # Scalo automatico quantità dal magazzino
             nuovo_stk_list = [{"LUNGHEZZA (mm)": l, "QTY": q} for l, q in stk_dict.items()]
             st.session_state.magazzino_1d = pd.DataFrame(nuovo_stk_list)
             
@@ -266,7 +394,7 @@ with tab_1d:
             c3.download_button("📕 DOWNLOAD REPORT PDF", get_valid_pdf_bytes("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.pdf", "application/pdf")
 
 # =============================================================================
-# SEZIONE 2D - LAMIERE (Inserimento Quantità Pezzi Singoli e Scalo automatico)
+# SEZIONE 2D - LAMIERE
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
@@ -288,12 +416,11 @@ with tab_2d:
         dist_sicurezza = st.number_input("DISTANZA TRA I PEZZI (mm)", value=12.0, step=2.0, key="dist_2d")
         area_min_2d = st.number_input(T["area_min_2d"], value=0.40, step=0.05, key="amin_2d")
         
-        # Caricamento DXF
+        # Caricamento file DXF con configuratore quantità singoli componenti
         st.markdown("### 🛠️ IMPOSTAZIONE COMPONENTI DXF")
         file_dxf_caricati = st.file_uploader("Trascina qui i tuoi file geometrici .dxf", type=["dxf"], accept_multiple_files=True, key="dxf_net_2d")
         
         if file_dxf_caricati:
-            # Sincronizza i file caricati con la tabella delle quantità dei singoli pezzi
             nomi_attuali = [f.name for f in file_dxf_caricati]
             vecchi_pezzi = st.session_state.pezzi_2d[st.session_state.pezzi_2d["NOME PEZZO DXF"].isin(nomi_attuali)]
             
@@ -307,15 +434,13 @@ with tab_2d:
             else:
                 st.session_state.pezzi_2d = vecchi_pezzi
         
-        # Mostra la tabella per editare le quantità richieste per ogni singolo DXF
         tabella_pezzi_2d = st.data_editor(st.session_state.pezzi_2d, num_rows="fixed", key="edit_pezzi_2d", use_container_width=True)
         st.session_state.pezzi_2d = tabella_pezzi_2d
         
         if st.button(T["esegui"], type="primary", key="run_2d"):
-            # Calcolo totale pezzi richiesti dalle impostazioni della tabella singoli pezzi
             totale_pezzi_richiesti = int(tabella_pezzi_2d["QTY DA PRODURRE"].sum()) if not tabella_pezzi_2d.empty else 16
             
-            # Scalo automatico di una lastra compatibile dal magazzino lamiere
+            # Scalo automatico di una lastra congruente dall'inventario lamiere
             stk_temp = []
             lastra_scalata = False
             for _, r in tabella_stk_2d.iterrows():
@@ -343,13 +468,11 @@ with tab_2d:
                 y_cursor = bordo_lamiera
                 while y_cursor + (h_pezzo * 2) + dist_sicurezza <= H_lamiera - bordo_lamiera and pezzi_piazzati < totale_pezzi_richiesti:
                     
-                    # Profilo base A
                     p1 = [[x_cursor + pt[0], y_cursor + pt[1]] for pt in [[0,0], [750,0], [750,160], [620,220], [130,220], [0,160]]]
                     fori1 = [[x_cursor + 80, y_cursor + 60], [x_cursor + 670, y_cursor + 60]]
                     poligoni_reali.append({"profile": p1, "holes": fori1, "color": "#2563EB"})
                     pezzi_piazzati += 1
                     
-                    # Profilo specchiato B (Incastro antisovrapposizione ottimizzato)
                     if pezzi_piazzati < totale_pezzi_richiesti:
                         y_offset_b = y_cursor + h_pezzo + dist_sicurezza
                         p2 = [[x_cursor + pt[0], y_offset_b + pt[1]] for pt in [[130,0], [620,0], [750,60], [750,220], [0,220], [0,60]]]
