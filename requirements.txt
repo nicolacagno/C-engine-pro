@@ -5,3 +5,4 @@ xlsxwriter
 reportlab
 matplotlib
 shapely
+ezdxf
