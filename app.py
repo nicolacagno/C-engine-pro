@@ -68,14 +68,12 @@ st.markdown("""
 def parse_uploaded_dxf(file_bytes):
     """Legge un file DXF caricato in memoria ed estrae le geometrie reali e il Bounding Box"""
     try:
-        # Carica il file stringa/bytes usando ezdxf
         stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
         doc = ezdxf.read(stream)
         msp = doc.modelspace()
         
         geometrie = {"linee": [], "cerchi": [], "polilinee": []}
         
-        # Estrazione entità di base
         for e in msp.query('LINE'):
             geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
             
@@ -87,13 +85,12 @@ def parse_uploaded_dxf(file_bytes):
             if punti:
                 geometrie["polilinee"].append(punti)
                 
-        # Calcolo del Bounding Box (Inviluppo massimo del pezzo)
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
             all_y.extend([l[0][1], l[1][1]])
         for c in geometrie["cerchi"]:
-            all_x.extend([c["center text"][0] - c["radius"] if "center text" in c else c["center"][0] - c["radius"], c["center"][0] + c["radius"]])
+            all_x.extend([c["center"][0] - c["radius"], c["center"][0] + c["radius"]])
             all_y.extend([c["center"][1] - c["radius"], c["center"][1] + c["radius"]])
         for poly in geometrie["polilinee"]:
             for pt in poly:
@@ -105,7 +102,6 @@ def parse_uploaded_dxf(file_bytes):
             min_y, max_y = min(all_y), max(all_y)
             width = max_x - min_x
             height = max_y - min_y
-            # Trasliamo tutto rispetto all'origine (0,0) del pezzo per sicurezza di nesting
             geometrie["offset"] = (min_x, min_y)
             return geometrie, round(width, 1), round(height, 1)
             
@@ -202,41 +198,32 @@ def generate_industrial_dxf(W, H, piazzamenti):
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
     
-    # Creazione dei layer industriali normati
-    doc.layers.new(name='PERIMETRO_LASTRA', dxfattribs={'color': 1}) # Rosso
-    doc.layers.new(name='PROFILI_TAGLIO', dxfattribs={'color': 3})   # Verde
-    doc.layers.new(name='FORATURE_INTERNE', dxfattribs={'color': 4}) # Ciano
+    doc.layers.new(name='PERIMETRO_LASTRA', dxfattribs={'color': 1}) 
+    doc.layers.new(name='PROFILI_TAGLIO', dxfattribs={'color': 3})   
+    doc.layers.new(name='FORATURE_INTERNE', dxfattribs={'color': 4}) 
     
-    # 1. Disegno perimetro lastra
     msp.add_lwpolyline([(0, 0), (W, 0), (W, H), (0, H)], dxfattribs={'layer': 'PERIMETRO_LASTRA', 'flags': 1})
     
-    # 2. Replica e traslazione delle entità di ogni singolo pezzo piazzato
     for p in piazzamenti:
         tx, ty = p["traslazione"]
         geom_orig = p["geometria_originale"]
         
         if geom_orig:
             ox, oy = geom_orig.get("offset", (0,0))
-            # Trasla e scrivi linee originali
             for line in geom_orig["linee"]:
                 p1 = (line[0][0] - ox + tx, line[0][1] - oy + ty)
                 p2 = (line[1][0] - ox + tx, line[1][1] - oy + ty)
                 msp.add_line(p1, p2, dxfattribs={'layer': 'PROFILI_TAGLIO'})
-            # Trasla e scrivi cerchi originali
             for circle in geom_orig["cerchi"]:
                 cx = circle["center"][0] - ox + tx
                 cy = circle["center"][1] - oy + ty
                 msp.add_circle((cx, cy), circle["radius"], dxfattribs={'layer': 'FORATURE_INTERNE'})
-            # Trasla e scrivi polilinee originali
             for poly in geom_orig["polilinee"]:
                 punti_traslati = [(pt[0] - ox + tx, pt[1] - oy + ty) for pt in poly]
                 msp.add_lwpolyline(punti_traslati, dxfattribs={'layer': 'PROFILI_TAGLIO', 'flags': 1})
         else:
-            # Fallback se non c'è un DXF caricato (usa la sagoma predefinita del codice precedente)
-            p_traslato = [(pt[0] + tx, pt[1] + ty) for pt in [[0,0], [750,0], [750,160], [620,220], [130,220], [0,160]]]
-            msp.add_lwpolyline(p_traslato, dxfattribs={'layer': 'PROFILI_TAGLIO', 'flags': 1})
-            for hole in [[80, 60], [670, 60]]:
-                msp.add_circle((hole[0] + tx, hole[1] + ty), 14.0, dxfattribs={'layer': 'FORATURE_INTERNE'})
+            p_box = [(pt[0] + tx, pt[1] + ty) for pt in [[0,0], [p["dim_w"],0], [p["dim_w"],p["dim_h"]], [0,p["dim_h"]]]]
+            msp.add_lwpolyline(p_box, dxfattribs={'layer': 'PROFILI_TAGLIO', 'flags': 1})
                 
     out_stream = io.StringIO()
     doc.write(out_stream)
@@ -245,7 +232,7 @@ def generate_industrial_dxf(W, H, piazzamenti):
 # =============================================================================
 # LOGICA DI INTERFACCIA E TRADUZIONI
 # =============================================================================
-lang = st.sidebar.selectbox("🌐 LINGUA", ["IT", "EN", "DE", "FR", "ES", "RO", "PT", "HU", "PL"])
+lang = st.sidebar.selectbox("🌐 LINGUA", ["IT", "EN"])
 
 if st.sidebar.button("🔄 RESET GENERAL"):
     st.session_state.results_1d = None
@@ -275,6 +262,26 @@ TXT = {
         "scarto_min_1d": "SPEZZONE MINIMO REINTEGRO (mm)",
         "area_min_2d": "AREA MINIMA RIUTILIZZO (m²)",
         "standby_2d": "IN ATTESA DI CARICAMENTO DXF REALE\n\nInserisci i file geometrici .dxf reali per leggerne la geometria nativa."
+    },
+    "EN": {
+        "title": "Geometric Nesting & Optimization",
+        "header_1d": "🪚 1D NESTING - BARS",
+        "header_2d": "📐 2D NESTING - SHEETS",
+        "commessa": "📋 WORK ORDER DETAILS",
+        "ordine": "ORDER NUMBER",
+        "cliente": "CUSTOMER NAME",
+        "parametri_macchina": "🔧 MACHINE PARAMETERS",
+        "magazzino": "📦 STOCK INVENTORY",
+        "tagli": "✂️ CUT LIST",
+        "esegui": "🚀 COMPUTE & REVIEW LAYOUT (SIMULATION)",
+        "conferma_stock": "✅ CONFIRM & SUBTRACT FROM REAL STOCK",
+        "stock_applicato": "💥 Inventory updated successfully!",
+        "spessore": "SHEET THICKNESS (mm)",
+        "bordo": "PERIMETER MARGIN (mm)",
+        "esporta": "💾 EXPORT PRODUCTION DATA",
+        "scarto_min_1d": "MINIMUM REUSABLE LENGTH (mm)",
+        "area_min_2d": "MINIMUM REUSABLE AREA (m²)",
+        "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts, set the required quantities and execute nesting."
     }
 }
 T = TXT.get(lang, TXT["IT"])
@@ -290,7 +297,7 @@ st.markdown(f"""
 tab_1d, tab_2d = st.tabs([T["header_1d"], T["header_2d"]])
 
 # =============================================================================
-# SEZIONE 1D - BARRE (Invariata e Preservata)
+# SEZIONE 1D - BARRE
 # =============================================================================
 with tab_1d:
     col_left, col_right = st.columns([1, 2])
@@ -358,7 +365,7 @@ with tab_1d:
                     st.session_state["1d_confermato"] = True
                     st.rerun()
             
-            fig_1d, ax_1d = plt.subplots(figsize=(10, len(res["piani"]) * 0.8 + 1))
+            fig_1d, ax_1d = plt.subplots(figsize=(10, max(2, len(res["piani"]) * 0.8 + 1)))
             ax_1d.set_facecolor('#151515'); fig_1d.patch.set_facecolor('#1A1A1A')
             for idx, b in enumerate(res["piani"]):
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
@@ -368,7 +375,7 @@ with tab_1d:
                 for t in b["tagli"]:
                     ax_1d.add_patch(patches.Rectangle((curr_x, idx*2), t, 1.2, edgecolor='white', facecolor=HEX_COLORI.get(str(t), '#4B5563')))
                     curr_x += t + spessore_taglio
-            ax_1d.set_xlim(-100, 6200); ax_1d.set_ylim(-1, len(res["piani"]) * 2); ax_1d.axis('off')
+            ax_1d.set_xlim(-100, 6200); ax_1d.set_ylim(-1, max(4, len(res["piani"]) * 2)); ax_1d.axis('off')
             
             df_exp = pd.DataFrame([{"ID_Barra": f"BAR-{i+1}", "Lunghezza_Totale_mm": b["lunghezza_totale"], "Sequenza_Tagli": "-".join(map(str, b["tagli"])), "Sfrido_Residuo_mm": int(b["spazio_rimasto"]+spessore_taglio)} for i, b in enumerate(res["piani"])])
             c1, c2, c3 = st.columns(3)
@@ -390,7 +397,7 @@ with tab_2d:
         
         st.markdown(f"### {T['magazzino']}")
         tabella_stk_2d = st.data_editor(st.session_state.magazzino_2d, num_rows="dynamic", key="stk_ed_2d", use_container_width=True)
-        st.session_state.magazzino_2d = tabular_stk_2d
+        st.session_state.magazzino_2d = tabella_stk_2d
         
         st.markdown(f"### {T['header_2d']}")
         W_lamiera = st.number_input("LARGHEZZA LASTRA X (mm)", value=3000, step=100, key="W_2d")
@@ -404,11 +411,10 @@ with tab_2d:
         file_dxf_caricati = st.file_uploader("Trascina qui i tuoi veri file geometrici .dxf", type=["dxf"], accept_multiple_files=True, key="dxf_net_2d")
         
         geometria_rilevata = None
-        w_rilevata, h_rilevata = 750, 220 # Dimensioni di fallback se nessun DXF è valido
+        w_rilevata, h_rilevata = 750, 220 
         nome_file_componente = "PEZZO_DEFAULT.DXF"
         
         if file_dxf_caricati:
-            # Analizziamo il primo file caricato per estrarre la vera geometria CAD
             file_attivo = file_dxf_caricati[0]
             nome_file_componente = file_attivo.name
             bytes_dxf = file_attivo.read()
@@ -417,11 +423,10 @@ with tab_2d:
             if geom and w_cad and h_cad:
                 geometria_rilevata = geom
                 w_rilevata, h_rilevata = w_cad, h_cad
-                st.success(f"✔️ Geometria DXF Letta con successo! Dimensioni reali pezzo: {w_rilevata} x {h_rilevata} mm")
+                st.success(f"✔️ Geometria DXF Letta! Dimensioni reali pezzo: {w_rilevata} x {h_rilevata} mm")
             else:
-                st.error("⚠️ Il DXF caricato non contiene entità leggibili (LINE, CIRCLE, POLYLINE). Uso la sagoma di fallback.")
+                st.error("⚠️ Il DXF caricato non contiene entità leggibili standard. Uso la sagoma di fallback.")
                 
-            # Aggiorniamo la tabella riassuntiva dei pezzi a schermo con le dimensioni reali estratte
             st.session_state.pezzi_2d = pd.DataFrame([{
                 "NOME PEZZO DXF": nome_file_componente, 
                 "QTY DA PRODURRE": 12, 
@@ -442,11 +447,9 @@ with tab_2d:
             pezzi_piazzati = 0
             x_cursor = bordo_lamiera
             
-            # Algoritmo di impacchettamento basato sulle dimensioni REALI lette dal DXF
             while x_cursor + w_rilevata <= W_lamiera - bordo_lamiera and pezzi_piazzati < totale_pezzi_richiesti:
                 y_cursor = bordo_lamiera
                 while y_cursor + h_rilevata <= H_lamiera - bordo_lamiera and pezzi_piazzati < totale_pezzi_richiesti:
-                    
                     piani_piazzati.append({
                         "id": f"P-{pezzi_piazzati+1:02d}",
                         "nome": nome_file_componente,
@@ -488,14 +491,10 @@ with tab_2d:
                 
             st.markdown(f"<h2>📐 Anteprima Reale DXF Caricato — Rendimento: {res2d['saturazione']}</h2>", unsafe_allow_html=True)
             
-            # =============================================================================
-            # ANTEPRIMA GRAFICA CAD REALE RIPRODOTTA IN SCALA
-            # =============================================================================
             fig, ax = plt.subplots(figsize=(12, 6))
-            ax.set_facecolor('#0F0F11') # Stile monitor CNC scuro
+            ax.set_facecolor('#0F0F11') 
             fig.patch.set_facecolor('#1A1A1A')
             
-            # Disegna Foglio di Lamiera
             ax.add_patch(patches.Rectangle((0, 0), W_lamiera, H_lamiera, fill=False, color="#FF5722", linewidth=2.5))
             
             for p in res2d["piazzamenti"]:
@@ -503,26 +502,20 @@ with tab_2d:
                 g_orig = p["geometria_originale"]
                 
                 if g_orig:
-                    # Se c'è un DXF originale, disegnamo le sue vere entità geometriche traslate sul piano
                     ox, oy = g_orig.get("offset", (0,0))
-                    
                     for line in g_orig["linee"]:
                         ax.plot([line[0][0] - ox + tx, line[1][0] - ox + tx], 
                                 [line[0][1] - oy + ty, line[1][1] - oy + ty], color="#E5E7EB", linewidth=1.0)
-                                
                     for circle in g_orig["cerchi"]:
                         ax.add_patch(patches.Circle((circle["center"][0] - ox + tx, circle["center"][1] - oy + ty), 
                                                     circle["radius"], facecolor="#0F0F11", edgecolor="#38BDF8", linewidth=0.8))
-                                                    
                     for poly in g_orig["polilinee"]:
                         poly_trans = [(pt[0] - ox + tx, pt[1] - oy + ty) for pt in poly]
                         ax.add_patch(patches.Polygon(np.array(poly_trans), closed=True, facecolor=p["color"], alpha=0.4, edgecolor="#E5E7EB", linewidth=1.0))
                 else:
-                    # Disegno di Fallback standard se non c'è file caricato
                     p_box = [(pt[0] + tx, pt[1] + ty) for pt in [[0,0], [p["dim_w"],0], [p["dim_w"],p["dim_h"]], [0,p["dim_h"]]]]
                     ax.add_patch(patches.Polygon(np.array(p_box), closed=True, facecolor=p["color"], alpha=0.6, edgecolor="#FFF"))
                 
-                # Testo etichetta sopra ogni pezzo piazzato
                 ax.text(tx + p["dim_w"]/2, ty + p["dim_h"]/2, f"{p['id']}", color="#FFFFFF", fontsize=8, weight='bold', ha='center', va='center')
                 
             ax.set_xlim(-100, W_lamiera + 100)
@@ -531,7 +524,6 @@ with tab_2d:
             ax.set_aspect('equal')
             st.pyplot(fig)
             
-            # Rigenerazione del DXF Industriale unendo i vettori traslati reali
             dxf_string_reale = generate_industrial_dxf(W_lamiera, H_lamiera, res2d["piazzamenti"])
             
             st.markdown(f"### {T['esporta']}")
