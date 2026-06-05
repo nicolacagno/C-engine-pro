@@ -63,13 +63,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# PARSER GEOMETRICO REALE DXF VIA EZDXF
+# PARSER GEOMETRICO AVANZATO E INTERPRETE INDUSTRIAL DXF v2
 # =============================================================================
 def parse_uploaded_dxf(file_bytes):
-    """Parser geometrico avanzato industriale: supporta Linee, Cerchi, Polilinee, 
-    Spline e l'esplosione automatica di Blocchi/Inserti."""
+    """Estrae geometrie da DXF ASCII, Binari, con supporto a ARCHI, SPLINE e BLOCCHI."""
     try:
-        # Tenta la lettura supportando sia file ASCII testuali che file Binari
         try:
             stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
             doc = ezdxf.read(stream)
@@ -79,46 +77,31 @@ def parse_uploaded_dxf(file_bytes):
         msp = doc.modelspace()
         geometrie = {"linee": [], "cerchi": [], "polilinee": []}
         
-        # ----------------=====================================================
-        # GESTIONE BLOCCHI (INSERT): Esplode i blocchi per leggere le geometrie interne
-        # ----------------=====================================================
-        def estrai_entita(spazio_geometrico):
-            for e in spazio_geometrico.query('LINE'):
+        def estrai_entita(spazio):
+            # Linee
+            for e in spazio.query('LINE'):
                 geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
-                
-            for e in msp.query('ARC'):
-                # Approssima l'arco come una polilinea di piccoli segmenti
-                try:
-                    punti_arco = [(pt.x, pt.y) for pt in e.flattening(distance=0.5)]
-                    if punti_arco:
-                        geometrie["polilinee"].append(punti_arco)
-                except:
-                    pass
-
-            for e in spazio_geometrico.query('CIRCLE'):
+            # Cerchi
+            for e in spazio.query('CIRCLE'):
                 geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
-                
-            for e in spazio_geometrico.query('LWPOLYLINE POLYLINE'):
+            # Polilinee standard
+            for e in spazio.query('LWPOLYLINE POLYLINE'):
                 punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
-                if punti:
-                    geometrie["polilinee"].append(punti)
-                    
-            for e in spazio_geometrico.query('SPLINE ELLIPSE'):
-                # Trasforma curve e spline in segmenti lineari per il nesting grafico
+                if punti: geometrie["polilinee"].append(punti)
+            # Archi, Spline ed Ellissi (Vengono spianati/esplosi in piccoli segmenti geometrici)
+            for e in spazio.query('ARC SPLINE ELLIPSE'):
                 try:
-                    punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.5)]
-                    if punti_curva:
-                        geometrie["polilinee"].append(punti_curva)
+                    punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.2)]
+                    if punti_curva: geometrie["polilinee"].append(punti_curva)
                 except:
                     pass
 
-        # Applica l'estrazione sullo spazio modello principale
+        # 1. Estrazione elementi dallo spazio principale
         estrai_entita(msp)
         
-        # Cerca i blocchi inseriti e analizza il loro contenuto nativo traslandolo
+        # 2. Estrazione ed esplosione dei Blocchi Interni (INSERT)
         for insert in msp.query('INSERT'):
             try:
-                # Esplode virtualmente l'entità per estrarre la geometria reale scalata/ruotata
                 for e in insert.virtual_entities():
                     if e.dxftype() == 'LINE':
                         geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
@@ -127,15 +110,13 @@ def parse_uploaded_dxf(file_bytes):
                     elif e.dxftype() in ('LWPOLYLINE', 'POLYLINE'):
                         punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
                         if punti: geometrie["polilinee"].append(punti)
-                    elif e.dxftype() in ('SPLINE', 'ELLIPSE', 'ARC'):
-                        punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.5)]
+                    elif e.dxftype() in ('ARC', 'SPLINE', 'ELLIPSE'):
+                        punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.2)]
                         if punti_curva: geometrie["polilinee"].append(punti_curva)
             except:
                 pass
 
-        # ----------------=====================================================
-        # CALCOLO DEL BOUNDING BOX (Ingombro massimo reale)
-        # ----------------=====================================================
+        # Calcolo Bounding Box complessivo
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
@@ -156,9 +137,10 @@ def parse_uploaded_dxf(file_bytes):
             geometrie["offset"] = (min_x, min_y)
             return geometrie, round(width, 1), round(height, 1)
             
-    except Exception as e:
+    except Exception:
         pass
     return None, None, None
+
 # =============================================================================
 # EXPORT MANAGERS SICURI E CERTIFICATI
 # =============================================================================
@@ -170,21 +152,6 @@ def make_real_excel(df):
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Nesting_Report')
     return output.getvalue()
-
-def make_text_report(title, summary, items_list):
-    out = f"==================================================\n"
-    out += f"       {title}\n"
-    out += f"==================================================\n\n"
-    out += f"RIEPILOGO PARAMETRI COMMESSA:\n"
-    for k, v in summary.items():
-        out += f" - {k}: {v}\n"
-    out += f"\n--------------------------------------------------\n"
-    out += f"DETTAGLIO SEQUENZE DI PRODUZIONE ED ELEMENTI:\n"
-    out += f"--------------------------------------------------\n"
-    for idx, item in enumerate(items_list):
-        out += f" [{idx+1}] {str(item)}\n"
-    out += f"\n==================================================\n"
-    return out.encode('utf-8')
 
 def make_real_pdf(title, summary, df, fig_to_embed=None):
     buffer = io.BytesIO()
@@ -240,14 +207,9 @@ def make_real_pdf(title, summary, df, fig_to_embed=None):
     doc.build(story)
     return buffer.getvalue()
 
-# =============================================================================
-# STRUTTURATORE E GENERATORE DXF REALE MULTI-LAYER
-# =============================================================================
 def generate_industrial_dxf(W, H, piazzamenti):
-    """Crea un file DXF strutturato replicando le entità geometriche originali traslate"""
     doc = ezdxf.new('R2010')
     msp = doc.modelspace()
-    
     doc.layers.new(name='PERIMETRO_LASTRA', dxfattribs={'color': 1}) 
     doc.layers.new(name='PROFILI_TAGLIO', dxfattribs={'color': 3})   
     doc.layers.new(name='FORATURE_INTERNE', dxfattribs={'color': 4}) 
@@ -280,7 +242,7 @@ def generate_industrial_dxf(W, H, piazzamenti):
     return out_stream.getvalue()
 
 # =============================================================================
-# LOGICA DI INTERFACCIA E TRADUZIONI
+# LOGICA DI INTERFACCIA
 # =============================================================================
 lang = st.sidebar.selectbox("🌐 LINGUA", ["IT", "EN"])
 
@@ -331,7 +293,7 @@ TXT = {
         "esporta": "💾 EXPORT PRODUCTION DATA",
         "scarto_min_1d": "MINIMUM REUSABLE LENGTH (mm)",
         "area_min_2d": "MINIMUM REUSABLE AREA (m²)",
-        "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts, set the required quantities and execute nesting."
+        "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts."
     }
 }
 T = TXT.get(lang, TXT["IT"])
@@ -379,7 +341,7 @@ with tab_1d:
             barre_usate_per_conferma = {}
             for pezzo in reqs:
                 inserito = False
-                for b in piani_barre:
+                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -435,7 +397,7 @@ with tab_1d:
             plt.close(fig_1d)
 
 # =============================================================================
-# SEZIONE 2D - LAMIERE (LETTURA ED ESPORTAZIONE GEOMETRICA REALE)
+# SEZIONE 2D - LAMIERE
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
@@ -473,7 +435,7 @@ with tab_2d:
             if geom and w_cad and h_cad:
                 geometria_rilevata = geom
                 w_rilevata, h_rilevata = w_cad, h_cad
-                st.success(f"✔️ Geometria DXF Letta! Dimensioni reali pezzo: {w_rilevata} x {h_rilevata} mm")
+                st.success(f"✔️ Geometria DXF Rilevata! Dimensioni reali pezzo: {w_rilevata} x {h_rilevata} mm")
             else:
                 st.error("⚠️ Il DXF caricato non contiene entità leggibili standard. Uso la sagoma di fallback.")
                 
