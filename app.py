@@ -66,8 +66,9 @@ st.markdown("""
 # PARSER GEOMETRICO AVANZATO E INTERPRETE INDUSTRIAL DXF v2
 # =============================================================================
 def parse_uploaded_dxf(file_bytes):
-    """Estrae geometrie da DXF ASCII, Binari, con supporto a ARCHI, SPLINE e BLOCCHI."""
+    """Estrae geometrie da DXF ASCII, Binari, con supporto completo a LINE, CIRCLE, ARC, SPLINE e BLOCCHI."""
     try:
+        # Tenta la decodifica testuale o binaria
         try:
             stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
             doc = ezdxf.read(stream)
@@ -78,17 +79,23 @@ def parse_uploaded_dxf(file_bytes):
         geometrie = {"linee": [], "cerchi": [], "polilinee": []}
         
         def estrai_entita(spazio):
-            # Linee
+            # Linee singole
             for e in spazio.query('LINE'):
                 geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
-            # Cerchi
+            
+            # Cerchi/Fori
             for e in spazio.query('CIRCLE'):
                 geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
-            # Polilinee standard
+            
+            # Polilinee aperte o chiuse
             for e in spazio.query('LWPOLYLINE POLYLINE'):
-                punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
-                if punti: geometrie["polilinee"].append(punti)
-            # Archi, Spline ed Ellissi (Vengono spianati/esplosi in piccoli segmenti geometrici)
+                try:
+                    punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
+                    if punti: geometrie["polilinee"].append(punti)
+                except:
+                    pass
+            
+            # Curve complesse, spline e archi (Convertiti in segmenti)
             for e in spazio.query('ARC SPLINE ELLIPSE'):
                 try:
                     punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.2)]
@@ -96,10 +103,10 @@ def parse_uploaded_dxf(file_bytes):
                 except:
                     pass
 
-        # 1. Estrazione elementi dallo spazio principale
+        # 1. Estrai dallo spazio principale (Modelspace)
         estrai_entita(msp)
         
-        # 2. Estrazione ed esplosione dei Blocchi Interni (INSERT)
+        # 2. Esplodi virtualmente i Blocchi raggruppati (INSERT)
         for insert in msp.query('INSERT'):
             try:
                 for e in insert.virtual_entities():
@@ -116,7 +123,7 @@ def parse_uploaded_dxf(file_bytes):
             except:
                 pass
 
-        # Calcolo Bounding Box complessivo
+        # 3. Calcolo dei limiti geometrici del pezzo (Bounding Box)
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
