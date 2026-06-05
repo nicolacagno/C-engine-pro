@@ -4,7 +4,6 @@ import numpy as np
 import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from datetime import datetime
 
 # =============================================================================
 # STATO DELLA SESSIONE (Persistenza magazzino e risultati temporanei)
@@ -14,7 +13,6 @@ if "results_1d" not in st.session_state:
 if "results_2d" not in st.session_state:
     st.session_state.results_2d = None
 
-# Stato per tracciare se la simulazione corrente è già stata confermata a magazzino
 if "1d_confermato" not in st.session_state:
     st.session_state["1d_confermato"] = False
 if "2d_confermato" not in st.session_state:
@@ -56,34 +54,34 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# EXPORT MANAGERS (Prevenzione totale file corrotti)
+# EXPORT MANAGERS SICURI (NATIVI E CERTIFICATI CON EXCEL INTERNO)
 # =============================================================================
-def get_valid_excel_bytes(df):
-    csv_string = df.to_csv(index=False, sep='\t')
-    return '\ufeff'.encode('utf-8') + csv_string.encode('utf-8')
+def make_pure_csv(df):
+    # 'utf-8-sig' inserisce il BOM corretto così Excel riconosce all'istante la formattazione e i caratteri
+    return df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
 
-def get_valid_pdf_bytes(title, data_summary, items_list):
-    now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
-    stream_content = f"BT\n/Helvetica-Bold 16 Tf\n50 780 Td\n({title}) Tj\n"
-    stream_content += f"0 -22 Td\n/Helvetica 10 Tf\n(Data Export: {now_str}) Tj\n0 -35 Td\n"
-    stream_content += "/Helvetica-Bold 12 Tf\n(DATI DI RIEPILOGO:) Tj\n0 -15 Td\n/Helvetica 10 Tf\n"
-    
-    for k, v in data_summary.items():
-        stream_content += f"({k}: {v}) Tj\n0 -14 Td\n"
-        
-    stream_content += "0 -20 Td\n/Helvetica-Bold 12 Tf\n(ELENCO DETTAGLIATO COMPONENTI:) Tj\n0 -15 Td\n/Helvetica 9 Tf\n"
-    for item in items_list[:25]:
-        stream_content += f"({str(item)}) Tj\n0 -13 Td\n"
-    stream_content += "ET\n"
-    
-    pdf_structure = (
-        f"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-        f"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-        f"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >>\nendobj\n"
-        f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n{stream_content}endstream\nendobj\n"
-        f"xref\n0 5\n0000000000 65535 f\nTRAILER\n<< /Size 5 /Root 1 0 R >>\n%%EOF"
-    )
-    return pdf_structure.encode('utf-8', errors='ignore')
+def make_real_excel(df):
+    # Genera un file Excel .xlsx REALE e nativo al 100% senza passare da finti formati testo tabulati
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Nesting_Report')
+    return output.getvalue()
+
+def make_text_report(title, summary, items_list):
+    # Genera un Report di Officina Professionale (.txt), leggibile al 100% ovunque senza corruzioni binari
+    out = f"==================================================\n"
+    out += f"       {title}\n"
+    out += f"==================================================\n\n"
+    out += f"RIEPILOGO PARAMETRI COMMESSA:\n"
+    for k, v in summary.items():
+        out += f" - {k}: {v}\n"
+    out += f"\n--------------------------------------------------\n"
+    out += f"DETTAGLIO SEQUENZE DI PRODUZIONE ED ELEMENTI:\n"
+    out += f"--------------------------------------------------\n"
+    for idx, item in enumerate(items_list):
+        out += f" [{idx+1}] {str(item)}\n"
+    out += f"\n==================================================\n"
+    return out.encode('utf-8')
 
 # =============================================================================
 # DIZIONARIO DI TRADUZIONE ESTESO (IT, EN, DE, FR, ES, RO, PT, HU, PL)
@@ -159,7 +157,7 @@ TXT = {
         "esporta": "💾 PRODUKTIONSDATEN EXPORTIEREN",
         "scarto_min_1d": "MINDESTLÄNGE WIEDERVERWENDUNG (mm)",
         "area_min_2d": "MINDESTFLÄCHE RESTE (m²)",
-        "standby_2d": "WARTEN AUF DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung."
+        "standby_2d": "WARTEN ON DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung."
     },
     "FR": {
         "title": "Imbrication Géométrique & Optimisation",
@@ -179,7 +177,7 @@ TXT = {
         "esporta": "💾 EXPORTER LES DONNÉES DE PRODUCTION",
         "scarto_min_1d": "CHUTE MINIMUM RÉCUPÉRABLE (mm)",
         "area_min_2d": "SURFACE MINIMUM RÉCUPÉRABLE (m²)",
-        "standby_2d": "EN ATTENTE DE FICHIERS DXF\n\nChargez les fichiers géométriques .dxf, définissez les quantités par pièce et lancez l'imbrication."
+        "standby_2d": "EN ATTENTE DE FICHIERS DXF\n\nChargez les fichiers géométriques .dxf, définissez les quantités par pièce lamiere et lancez l'imbrication."
     },
     "ES": {
         "title": "Nesting Geométrico y Optimización",
@@ -318,7 +316,6 @@ with tab_1d:
         df_cut = pd.DataFrame([{"LUNGHEZZA (mm)": 1200, "QTY": 4}, {"LUNGHEZZA (mm)": 850, "QTY": 6}, {"LUNGHEZZA (mm)": 340, "QTY": 12}])
         tabella_cut = st.data_editor(df_cut, num_rows="dynamic", key="cut_ed_1d", use_container_width=True)
         
-        # IL PULSANTE DI ESECUZIONE FA SOLO UNA SIMULAZIONE
         if st.button(T["esegui"], type="primary", key="run_1d"):
             reqs = []
             for _, r in tabella_cut.iterrows():
@@ -326,7 +323,6 @@ with tab_1d:
                     reqs.extend([int(r["LUNGHEZZA (mm)"])] * int(r["QTY"]))
             reqs.sort(reverse=True)
             
-            # Leggiamo lo stock attuale per la simulazione
             stk_dict_sim = {}
             for _, r in tabella_stk.iterrows():
                 if pd.notnull(r["LUNGHEZZA (mm)"]) and pd.notnull(r["QTY"]):
@@ -334,11 +330,11 @@ with tab_1d:
             
             piani_barre = []
             scarti_idonei = []
-            barre_usate_per_conferma = {} # Tracciamo cosa scaricare se l'utente conferma
+            barre_usate_per_conferma = {}
             
             for pezzo in reqs:
                 inserito = False
-                for b in piani_barre:
+                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -352,7 +348,6 @@ with tab_1d:
                         lunghezza_scelta = disponibili[0]
                         stk_dict_sim[lunghezza_scelta] -= 1
                     
-                    # Registriamo l'uso effettivo per lo scarico reale futuro
                     barre_usate_per_conferma[lunghezza_scelta] = barre_usate_per_conferma.get(lunghezza_scelta, 0) + 1
                     
                     piani_barre.append({
@@ -366,26 +361,22 @@ with tab_1d:
                 if sfrido_reale >= spezzone_min_1d:
                     scarti_idonei.append(sfrido_reale)
             
-            # Salviamo i dati temporanei della simulazione nello stato della sessione
             st.session_state.results_1d = {
                 "piani": piani_barre, 
                 "scarti": scarti_idonei,
                 "barre_da_scaricare": barre_usate_per_conferma
             }
-            st.session_state["1d_confermato"] = False # Nuova simulazione pronta, non ancora applicata
+            st.session_state["1d_confermato"] = False
             st.rerun()
 
     with col_right:
         if st.session_state.results_1d:
             res = st.session_state.results_1d
             
-            # Mostra avviso se la simulazione non è ancora stata consolidata a magazzino
             if not st.session_state["1d_confermato"]:
                 st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto per salvare.")
                 
-                # PULSANTE DI CONFERMA REALE E FINALE
                 if st.button(T["conferma_stock"], key="btn_conf_1d", type="secondary"):
-                    # Scarichiamo il materiale usato
                     stk_reale = {}
                     for _, r in st.session_state.magazzino_1d.iterrows():
                         stk_reale[int(r["LUNGHEZZA (mm)"])] = int(r["QTY"])
@@ -394,11 +385,9 @@ with tab_1d:
                         if lung in stk_reale:
                             stk_reale[lung] = max(0, stk_reale[lung] - qty_da_togliere)
                     
-                    # Carichiamo gli scarti qualificati recuperati
                     for sc in res["scarti"]:
                         stk_reale[sc] = stk_reale.get(sc, 0) + 1
                     
-                    # Ricostruiamo il dataframe del magazzino reale
                     nuovo_stk_list = [{"LUNGHEZZA (mm)": l, "QTY": q} for l, q in stk_reale.items()]
                     st.session_state.magazzino_1d = pd.DataFrame(nuovo_stk_list)
                     st.session_state["1d_confermato"] = True
@@ -431,11 +420,11 @@ with tab_1d:
             ])
             
             c1, c2, c3 = st.columns(3)
-            c1.download_button("📥 DOWNLOAD 1D CSV", df_exp.to_csv(index=False).encode('utf-8'), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
-            c2.download_button("📊 DOWNLOAD 1D EXCEL", get_valid_excel_bytes(df_exp), f"Nesting_1D_{num_ordine_1d}.xls", "application/vnd.ms-excel")
+            c1.download_button("📥 DOWNLOAD 1D CSV", make_pure_csv(df_exp), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
+            c2.download_button("📊 DOWNLOAD 1D EXCEL (.XLSX)", make_real_excel(df_exp), f"Nesting_1D_{num_ordine_1d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
             summary_1d = {"N_Ordine": num_ordine_1d, "Cliente": nome_cliente_1d, "Barre_Lavorate": len(res["piani"])}
-            c3.download_button("📕 DOWNLOAD REPORT PDF", get_valid_pdf_bytes("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.pdf", "application/pdf")
+            c3.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.txt", "text/plain")
 
 # =============================================================================
 # SEZIONE 2D - LAMIERE
@@ -480,11 +469,9 @@ with tab_2d:
         tabella_pezzi_2d = st.data_editor(st.session_state.pezzi_2d, num_rows="fixed", key="edit_pezzi_2d", use_container_width=True)
         st.session_state.pezzi_2d = tabella_pezzi_2d
         
-        # IL PULSANTE DI ESECUZIONE FA SOLO UNA SIMULAZIONE
         if st.button(T["esegui"], type="primary", key="run_2d"):
             totale_pezzi_richiesti = int(tabella_pezzi_2d["QTY DA PRODURRE"].sum()) if not tabella_pezzi_2d.empty else 16
             
-            # Algoritmo Nesting ad Incastro Geometrico Reale Specchiato (Simulazione visiva)
             poligoni_reali = []
             w_pezzo = 750
             h_pezzo = 220
@@ -523,19 +510,17 @@ with tab_2d:
                 "saturazione": f"{round((area_taglio_mq/area_totale_mq)*100, 1)}%",
                 "dimension_lastra_usata": {"W": W_lamiera, "H": H_lamiera, "THK": spessore_lastra}
             }
-            st.session_state["2d_confermato"] = False # Nuova simulazione pronta per la conferma
+            st.session_state["2d_confermato"] = False
             st.rerun()
 
     with col2_right:
         if st.session_state.results_2d:
             res2d = st.session_state.results_2d
             
-            # Controllo conferma per il 2D
             if not st.session_state["2d_confermato"]:
                 st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto per salvare.")
                 
                 if st.button(T["conferma_stock"], key="btn_conf_2d", type="secondary"):
-                    # Scalo effettivo dal magazzino lamiere reale
                     stk_temp = []
                     lastra_scalata = False
                     p_info = res2d["dimension_lastra_usata"]
@@ -551,7 +536,6 @@ with tab_2d:
                             lastra_scalata = True
                         stk_temp.append({"LARGHEZZA X (mm)": w_s, "ALTEZZA Y (mm)": h_s, "SPESSORE (mm)": th_s, "QTY": q_s})
                     
-                    # Se lo scarto supera l'area minima inseriamo il resto riutilizzabile in inventario
                     if res2d['scarto_mq'] >= area_min_2d:
                         stk_temp.append({
                             "LARGHEZZA X (mm)": int(p_info["W"]), 
@@ -586,7 +570,6 @@ with tab_2d:
             
             st.metric(label="Superficie Residua Riutilizzabile Stimata", value=f"{res2d['scarto_mq']} m²")
             
-            # Generazione codice DXF Vettoriale CNC 1:1
             dxf_string = "0\nSECTION\n2\nENTITIES\n"
             dxf_string += f"0\nPOLYLINE\n8\nPERIMETRO_PIANO\n70\n1\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n0.0\n20\n0.0\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n{W_lamiera}\n20\n0.0\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n{W_lamiera}\n20\n{H_lamiera}\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n0.0\n20\n{H_lamiera}\n0\nSEQEND\n"
             
@@ -603,11 +586,11 @@ with tab_2d:
             df_exp_2d = pd.DataFrame([{"ID_Ordine": num_ordine_2d, "Cliente": nome_cliente_2d, "Spessore_Lamiera_mm": spessore_lastra, "Totale_Pezzi_Nesting": len(res2d['piazzamenti']), "Rendimento_Efficienza": res2d['saturazione'], "Scarto_Residuo_m2": res2d['scarto_mq']}])
             
             bx1, bx2, bx3, bx4 = st.columns(4)
-            bx1.download_button("📥 DOWNLOAD 2D CSV", df_exp_2d.to_csv(index=False).encode('utf-8'), f"Nesting_2D_{num_ordine_2d}.csv", "text/csv")
-            bx2.download_button("📊 DOWNLOAD 2D EXCEL", get_valid_excel_bytes(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.xls", "application/vnd.ms-excel")
+            bx1.download_button("📥 DOWNLOAD 2D CSV", make_pure_csv(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.csv", "text/csv")
+            bx2.download_button("📊 DOWNLOAD 2D EXCEL (.XLSX)", make_real_excel(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             bx3.download_button("🛠️ SCARICA DXF MASTRÒ CNC (1:1)", dxf_string, file_name=f"CNC_Layout_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
             
             summary_2d = {"N_Ordine": num_ordine_2d, "Spessore_mm": spessore_lastra, "Pezzi_Prodotti": len(res2d['piazzamenti']), "Rendimento": res2d['saturazione']}
-            bx4.download_button("📕 DOWNLOAD REPORT PDF", get_valid_pdf_bytes("REPORT PRODUTTIVO NESTING 2D", summary_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.pdf", "application/pdf")
+            bx4.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 2D", summary_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.txt", "text/plain")
         else:
             st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
