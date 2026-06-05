@@ -6,11 +6,10 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import ezdxf
 
-# Abbiamo rimosso reportlab dall'avvio per impedire il blocco del server cloud.
 REPORTLAB_AVAILABLE = False
 
 # =============================================================================
-# STATO DELLA SESSIONE (Persistenza magazzino e risultati temporanei)
+# STATO DELLA SESSIONE
 # =============================================================================
 if "results_1d" not in st.session_state:
     st.session_state.results_1d = None
@@ -22,19 +21,21 @@ if "1d_confermato" not in st.session_state:
 if "2d_confermato" not in st.session_state:
     st.session_state["2d_confermato"] = False
 
+# Inizializzazione magazzini con la nuova colonna CODICE MATERIALE
 if "magazzino_1d" not in st.session_state:
     st.session_state.magazzino_1d = pd.DataFrame([
-        {"LUNGHEZZA (mm)": 6000, "QTY": 10},
-        {"LUNGHEZZA (mm)": 3000, "QTY": 5}
+        {"CODICE MATERIALE": "FE360", "LUNGHEZZA (mm)": 6000, "QTY": 10},
+        {"CODICE MATERIALE": "INOX304", "LUNGHEZZA (mm)": 6000, "QTY": 5},
+        {"CODICE MATERIALE": "FE360", "LUNGHEZZA (mm)": 3000, "QTY": 5}
     ])
 if "magazzino_2d" not in st.session_state:
     st.session_state.magazzino_2d = pd.DataFrame([
-        {"LARGHEZZA X (mm)": 3000, "ALTEZZA Y (mm)": 1500, "SPESSORE (mm)": 6.0, "QTY": 5},
-        {"LARGHEZZA X (mm)": 2440, "ALTEZZA Y (mm)": 1220, "SPESSORE (mm)": 4.0, "QTY": 2}
+        {"CODICE MATERIALE": "L_FE_6MM", "LARGHEZZA X (mm)": 3000, "ALTEZZA Y (mm)": 1500, "SPESSORE (mm)": 6.0, "QTY": 5},
+        {"CODICE MATERIALE": "L_INOX_4MM", "LARGHEZZA X (mm)": 2440, "ALTEZZA Y (mm)": 1220, "SPESSORE (mm)": 4.0, "QTY": 2}
     ])
 
 if "pezzi_2d" not in st.session_state:
-    st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
+    st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "CODICE RICHIESTO", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
 
 st.set_page_config(page_title="MetalHub Suite Pro", layout="wide", initial_sidebar_state="expanded")
 
@@ -58,52 +59,37 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# PARSER GEOMETRICO COMPATIBILE ED EVOLUTO
+# PARSER GEOMETRICO DXF
 # =============================================================================
 def parse_uploaded_dxf(file_bytes):
-    """Analizza il file DXF estraendo le geometrie utili sia da Modelspace che dai blocchi interni."""
     try:
         stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
         doc = ezdxf.read(stream)
-            
         geometrie = {"linee": [], "cerchi": [], "polilinee": []}
         
         def estrai_da_contenitore(spazio):
-            # Estrazione Linee
             for e in spazio.query('LINE'):
                 geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
-            
-            # Estrazione Cerchi
             for e in spazio.query('CIRCLE'):
                 geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
-            
-            # Estrazione Polilinee
             for e in spazio.query('LWPOLYLINE POLYLINE'):
                 try:
                     punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
                     if punti: geometrie["polilinee"].append(punti)
-                except:
-                    pass
-            
-            # Gestione Archi e Spline (Approssimazione sicura per vecchie versioni ezdxf)
+                except: pass
             for e in spazio.query('ARC SPLINE ELLIPSE'):
                 try:
                     punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.25)]
                     if punti_curva: geometrie["polilinee"].append(punti_curva)
-                except:
-                    pass
+                except: pass
 
-        # 1. Analisi spazio principale
         msp = doc.modelspace()
         estrai_da_contenitore(msp)
-        
-        # 2. Se vuoto, cerca nei blocchi salvati nel database del disegno
         if len(geometrie["linee"]) == 0 and len(geometrie["cerchi"]) == 0 and len(geometrie["polilinee"]) == 0:
             for blocco in doc.blocks:
                 if not blocco.name.startswith('*'):
                     estrai_da_contenitore(blocco)
 
-        # Calcolo Bounding Box
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
@@ -113,19 +99,13 @@ def parse_uploaded_dxf(file_bytes):
             all_y.extend([c["center"][1] - c["radius"], c["center"][1] + c["radius"]])
         for poly in geometrie["polilinee"]:
             for pt in poly:
-                all_x.append(pt[0])
-                all_y.append(pt[1])
+                all_x.append(pt[0]); all_y.append(pt[1])
                 
         if all_x and all_y:
             min_x, max_x = min(all_x), max(all_x)
             min_y, max_y = min(all_y), max(all_y)
-            width = max_x - min_x
-            height = max_y - min_y
-            geometrie["offset"] = (min_x, min_y)
-            return geometrie, round(width, 1), round(height, 1)
-            
-    except Exception:
-        pass
+            return geometrie, round(max_x - min_x, 1), round(max_y - min_y, 1)
+    except: pass
     return None, None, None
 
 # =============================================================================
@@ -145,30 +125,12 @@ def generate_industrial_dxf(W, H, piazzamenti):
     msp = doc.modelspace()
     doc.layers.new(name='PERIMETRO_LASTRA', dxfattribs={'color': 1}) 
     doc.layers.new(name='PROFILI_TAGLIO', dxfattribs={'color': 3})   
-    doc.layers.new(name='FORATURE_INTERNE', dxfattribs={'color': 4}) 
-    
     msp.add_lwpolyline([(0, 0), (W, 0), (W, H), (0, H)], dxfattribs={'layer': 'PERIMETRO_LASTRA', 'flags': 1})
     
     for p in piazzamenti:
         tx, ty = p["traslazione"]
-        geom_orig = p["geometria_originale"]
-        
-        if geom_orig:
-            ox, oy = geom_orig.get("offset", (0,0))
-            for line in geom_orig["linee"]:
-                p1 = (line[0][0] - ox + tx, line[0][1] - oy + ty)
-                p2 = (line[1][0] - ox + tx, line[1][1] - oy + ty)
-                msp.add_line(p1, p2, dxfattribs={'layer': 'PROFILI_TAGLIO'})
-            for circle in geom_orig["cerchi"]:
-                cx = circle["center"][0] - ox + tx
-                cy = circle["center"][1] - oy + ty
-                msp.add_circle((cx, cy), circle["radius"], dxfattribs={'layer': 'FORATURE_INTERNE'})
-            for poly in geom_orig["polilinee"]:
-                punti_traslati = [(pt[0] - ox + tx, pt[1] - oy + ty) for pt in poly]
-                msp.add_lwpolyline(punti_traslati, dxfattribs={'layer': 'PROFILI_TAGLIO', 'flags': 1})
-        else:
-            p_box = [(pt[0] + tx, pt[1] + ty) for pt in [[0,0], [p["dim_w"],0], [p["dim_w"],p["dim_h"]], [0,p["dim_h"]]]]
-            msp.add_lwpolyline(p_box, dxfattribs={'layer': 'PROFILI_TAGLIO', 'flags': 1})
+        p_box = [(pt[0] + tx, pt[1] + ty) for pt in [[0,0], [p["dim_w"],0], [p["dim_w"],p["dim_h"]], [0,p["dim_h"]]]]
+        msp.add_lwpolyline(p_box, dxfattribs={'layer': 'PROFILI_TAGLIO', 'flags': 1})
                 
     out_stream = io.StringIO()
     doc.write(out_stream)
@@ -184,19 +146,19 @@ if st.sidebar.button("🔄 RESET GENERAL"):
     st.session_state.results_2d = None
     st.session_state["1d_confermato"] = False
     st.session_state["2d_confermato"] = False
-    st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
+    st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "CODICE RICHIESTO", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
     st.rerun()
 
 TXT = {
     "IT": {
-        "title": "Nesting Geometrico & Ottimizzazione",
+        "title": "Nesting Multi-Codice Geometrico",
         "header_1d": "🪚 NESTING 1D - BARRE",
         "header_2d": "📐 NESTING 2D - LAMIERE",
         "commessa": "📋 INTESTAZIONE COMMESSA",
         "ordine": "NUMERO ORDINE",
         "cliente": "NOME CLIENTE",
         "parametri_macchina": "🔧 PARAMETRI MACCHINA",
-        "magazzino": "📦 INVENTARIO IN MAGAZZINO",
+        "magazzino": "📦 INVENTARIO IN MAGAZZINO (CON CODICE)",
         "tagli": "✂️ LISTA TAGLI RICHIESTI",
         "esegui": "🚀 ELABORA ED ESAMINA SOLUZIONE (SIMULAZIONE)",
         "conferma_stock": "✅ CONFERMA E APPLICA A MAGAZZINO REALE",
@@ -209,14 +171,14 @@ TXT = {
         "standby_2d": "IN ATTESA DI CARICAMENTO DXF REALE\n\nInserisci i file geometrici .dxf reali per leggerne la geometria nativa."
     },
     "EN": {
-        "title": "Geometric Nesting & Optimization",
+        "title": "Multi-Code Nesting Engine",
         "header_1d": "🪚 1D NESTING - BARS",
         "header_2d": "📐 2D NESTING - SHEETS",
         "commessa": "📋 WORK ORDER DETAILS",
         "ordine": "ORDER NUMBER",
         "cliente": "CUSTOMER NAME",
         "parametri_macchina": "🔧 MACHINE PARAMETERS",
-        "magazzino": "📦 STOCK INVENTORY",
+        "magazzino": "📦 STOCK INVENTORY (WITH CODE)",
         "tagli": "✂️ CUT LIST",
         "esegui": "🚀 COMPUTE & REVIEW LAYOUT (SIMULATION)",
         "conferma_stock": "✅ CONFIRM & SUBTRACT FROM REAL STOCK",
@@ -234,7 +196,7 @@ HEX_COLORI = {"1200": "#3B82F6", "850": "#10B981", "340": "#8B5CF6", "default": 
 
 st.markdown(f"""
     <div style="background-color:#262626; padding:15px; border-radius:5px; margin-bottom:25px; border-bottom:2px solid #FF5722;">
-        <span style="color:#FF5722; font-weight:bold; font-size:20px; margin-right:10px;">🔥 MetalHub Suite</span>
+        <span style="color:#FF5722; font-weight:bold; font-size:20px; margin-right:10px;">🔥 MetalHub Suite v2</span>
         <span style="color:#666666; font-size:11px; font-weight:bold; letter-spacing:1px;">{T['title'].upper()}</span>
     </div>
 """, unsafe_allow_html=True)
@@ -242,58 +204,89 @@ st.markdown(f"""
 tab_1d, tab_2d = st.tabs([T["header_1d"], T["header_2d"]])
 
 # =============================================================================
-# SEZIONE 1D - BARRE
+# SEZIONE 1D - BARRE MULTI-CODICE
 # =============================================================================
 with tab_1d:
     col_left, col_right = st.columns([1, 2])
     with col_left:
         st.markdown(f"### {T['commessa']}")
-        num_ordine_1d = st.text_input(T["ordine"], value="ORD-1D-001", key="num_1d")
-        nome_cliente_1d = st.text_input(T["cliente"], value="Officina Meccanica Srl", key="cli_1d")
+        num_ordine_1d = st.text_input(T["ordine"], value="ORD-1D-MULTI", key="num_1d")
+        nome_cliente_1d = st.text_input(T["cliente"], value="Carpenteria Srl", key="cli_1d")
+        
         st.markdown(f"### {T['parametri_macchina']}")
         spessore_taglio = st.number_input("BLADE KERF (mm)", value=3.0, step=0.5, key="lama_1d")
         intestazione_barra = st.number_input("INTESTATURA (mm)", value=20.0, step=5.0, key="int_1d")
         spezzone_min_1d = st.number_input(T["scarto_min_1d"], value=1000.0, step=100.0, key="min_1d")
+        
         st.markdown(f"### {T['magazzino']}")
         tabella_stk = st.data_editor(st.session_state.magazzino_1d, num_rows="dynamic", key="stk_ed_1d", use_container_width=True)
         st.session_state.magazzino_1d = tabella_stk
+        
         st.markdown(f"### {T['tagli']}")
-        df_cut = pd.DataFrame([{"LUNGHEZZA (mm)": 1200, "QTY": 4}, {"LUNGHEZZA (mm)": 850, "QTY": 6}, {"LUNGHEZZA (mm)": 340, "QTY": 12}])
+        df_cut = pd.DataFrame([
+            {"CODICE RICHIESTO": "FE360", "LUNGHEZZA (mm)": 1200, "QTY": 4},
+            {"CODICE RICHIESTO": "FE360", "LUNGHEZZA (mm)": 850, "QTY": 3},
+            {"CODICE RICHIESTO": "INOX304", "LUNGHEZZA (mm)": 1200, "QTY": 3}
+        ])
         tabella_cut = st.data_editor(df_cut, num_rows="dynamic", key="cut_ed_1d", use_container_width=True)
         
         if st.button(T["esegui"], type="primary", key="run_1d"):
-            reqs = []
-            for _, r in tabella_cut.iterrows():
-                if pd.notnull(r["LUNGHEZZA (mm)"]) and pd.notnull(r["QTY"]):
-                    reqs.extend([int(r["LUNGHEZZA (mm)"])] * int(r["QTY"]))
-            reqs.sort(reverse=True)
-            stk_dict_sim = {int(r["LUNGHEZZA (mm)"]): int(r["QTY"]) for _, r in tabella_stk.iterrows() if pd.notnull(r["LUNGHEZZA (mm)"])}
-            
+            # Generazione dizionario magazzino suddiviso per Codici
+            stk_struttura = {}
+            for _, r in tabella_stk.iterrows():
+                if pd.notnull(r["CODICE MATERIALE"]) and pd.notnull(r["LUNGHEZZA (mm)"]):
+                    cod = str(r["CODICE MATERIALE"]).strip()
+                    lung = int(r["LUNGHEZZA (mm)"])
+                    qty = int(r["QTY"])
+                    if cod not in stk_struttura: stk_struttura[cod] = {}
+                    stk_struttura[cod][lung] = stk_struttura[cod].get(lung, 0) + qty
+
             piani_barre = []
-            scarti_idonei = []
-            barre_usate_per_conferma = {}
-            for pezzo in reqs:
-                inserito = False
-                for b in piani_barre:
-                    if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
-                        b["tagli"].append(pezzo)
-                        b["spazio_rimasto"] -= (pezzo + spessore_taglio)
-                        inserito = True
-                        break
-                if not inserito:
-                    lunghezza_scelta = 6000
-                    disponibili = [l for l, q in stk_dict_sim.items() if q > 0]
-                    if disponibili:
-                        disponibili.sort()
-                        lunghezza_scelta = disponibili[0]
-                        stk_dict_sim[lunghezza_scelta] -= 1
-                    barre_usate_per_conferma[lunghezza_scelta] = barre_usate_per_conferma.get(lunghezza_scelta, 0) + 1
-                    piani_barre.append({"lunghezza_totale": lunghezza_scelta, "tagli": [pezzo], "spazio_rimasto": lunghezza_scelta - intestazione_barra - pezzo})
+            scarti_idonei_da_reintegrare = []
+            barre_usate_per_conferma = [] # lista di tuple (codice, lunghezza)
+            
+            # Raggruppa le richieste per codice richiesto
+            for _, cut_row in tabella_cut.iterrows():
+                if pd.notnull(cut_row["CODICE RICHIESTO"]) and pd.notnull(cut_row["LUNGHEZZA (mm)"]) and pd.notnull(cut_row["QTY"]):
+                    cod_req = str(cut_row["CODICE RICHIESTO"]).strip()
+                    lung_pezzo = int(cut_row["LUNGHEZZA (mm)"])
+                    qty_pezzo = int(cut_row["QTY"])
+                    
+                    for _ in range(qty_pezzo):
+                        inserito = False
+                        # Cerca se tra i piani già aperti per QUESTO SPECIFICO CODICE c'è spazio
+                        for b in piani_barre:
+                            if b["codice"] == cod_req and (lung_pezzo + spessore_taglio) <= b["spazio_rimasto"]:
+                                b["tagli"].append(lung_pezzo)
+                                b["spazio_rimasto"] -= (lung_pezzo + spessore_taglio)
+                                inserito = True
+                                break
+                        
+                        # Se non c'è spazio, preleva una nuova barra adatta dal magazzino per quel codice
+                        if not inserito:
+                            lunghezza_scelta = 6000
+                            sub_stock = stk_struttura.get(cod_req, {})
+                            disponibili = [l for l, q in sub_stock.items() if q > 0]
+                            
+                            if disponibili:
+                                disponibili.sort()
+                                lunghezza_scelta = disponibili[0]
+                                stk_struttura[cod_req][lunghezza_scelta] -= 1
+                            
+                            barre_usate_per_conferma.append({"CODICE": cod_req, "LUNGHEZZA": lunghezza_scelta})
+                            piani_barre.append({
+                                "codice": cod_req,
+                                "lunghezza_totale": lunghezza_scelta,
+                                "tagli": [lung_pezzo],
+                                "spazio_rimasto": lunghezza_scelta - intestazione_barra - lung_pezzo
+                            })
             
             for b in piani_barre:
                 sfrido_reale = int(b["spazio_rimasto"] + spessore_taglio)
-                if sfrido_reale >= spezzone_min_1d: scarti_idonei.append(sfrido_reale)
-            st.session_state.results_1d = {"piani": piani_barre, "scarti": scarti_idonei, "barre_da_scaricare": barre_usate_per_conferma}
+                if sfrido_reale >= spezzone_min_1d:
+                    scarti_idonei_da_reintegrare.append({"CODICE MATERIALE": b["codice"], "LUNGHEZZA (mm)": sfrido_reale, "QTY": 1})
+                    
+            st.session_state.results_1d = {"piani": piani_barre, "scarti": scarti_idonei_da_reintegrare, "scarico": barre_usate_per_conferma}
             st.session_state["1d_confermato"] = False
             st.rerun()
 
@@ -301,124 +294,135 @@ with tab_1d:
         if st.session_state.results_1d:
             res = st.session_state.results_1d
             if not st.session_state["1d_confermato"]:
-                st.warning("⚠️ SIMULAZIONE")
+                st.warning("⚠️ SIMULAZIONE MULTI-MATERIALE")
                 if st.button(T["conferma_stock"], key="btn_conf_1d"):
-                    stk_reale = {int(r["LUNGHEZZA (mm)"]): int(r["QTY"]) for _, r in st.session_state.magazzino_1d.iterrows()}
-                    for lung, qty in res["barre_da_scaricare"].items(): stk_reale[lung] = max(0, stk_reale.get(lung, 0) - qty)
-                    for sc in res["scarti"]: stk_reale[sc] = stk_reale.get(sc, 0) + 1
-                    st.session_state.magazzino_1d = pd.DataFrame([{"LUNGHEZZA (mm)": l, "QTY": q} for l, q in stk_reale.items()])
+                    # Logica di scarico/carico reale
+                    df_stk_attuale = st.session_state.magazzino_1d.copy()
+                    for item in res["scarico"]:
+                        idx = df_stk_attuale[(df_stk_attuale["CODICE MATERIALE"] == item["CODICE"]) & (df_stk_attuale["LUNGHEZZA (mm)"] == item["LUNGHEZZA"])].index
+                        if len(idx) > 0:
+                            df_stk_attuale.loc[idx[0], "QTY"] = max(0, df_stk_attuale.loc[idx[0], "QTY"] - 1)
+                    
+                    if res["scarti"]:
+                        df_stk_attuale = pd.concat([df_stk_attuale, pd.DataFrame(res["scarti"])], ignore_index=True)
+                    
+                    st.session_state.magazzino_1d = df_stk_attuale
                     st.session_state["1d_confermato"] = True
                     st.rerun()
             
-            fig_1d, ax_1d = plt.subplots(figsize=(10, max(2, len(res["piani"]) * 0.8 + 1)))
-            ax_1d.set_facecolor('#151515'); fig_1d.patch.set_facecolor('#1A1A1A')
             for idx, b in enumerate(res["piani"]):
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
                 html_segmenti = "".join([f'<div class="bar-segment" style="width:{(t / b["lunghezza_totale"]) * 100}%; background-color:{HEX_COLORI.get(str(t), HEX_COLORI["default"])};">{t}</div>' for t in b["tagli"]])
-                st.markdown(f'<div class="bar-container"><div class="bar-header"><div>BARRA {idx+1} ({b["lunghezza_totale"]}mm)</div><div>SFRIDO: {sfrido_f}mm</div></div><div class="bar-track">{html_segmenti}</div></div>', unsafe_allow_html=True)
-                curr_x = 0
-                for t in b["tagli"]:
-                    ax_1d.add_patch(patches.Rectangle((curr_x, idx*2), t, 1.2, edgecolor='white', facecolor=HEX_COLORI.get(str(t), '#4B5563')))
-                    curr_x += t + spessore_taglio
-            ax_1d.set_xlim(-100, 6200); ax_1d.set_ylim(-1, max(4, len(res["piani"]) * 2)); ax_1d.axis('off')
+                st.markdown(f'<div class="bar-container"><div class="bar-header"><div>[ {b["codice"]} ] BARRA {idx+1} ({b["lunghezza_totale"]}mm)</div><div>SFRIDO: {sfrido_f}mm</div></div><div class="bar-track">{html_segmenti}</div></div>', unsafe_allow_html=True)
             
-            df_exp = pd.DataFrame([{"ID_Barra": f"BAR-{i+1}", "Lunghezza_Totale_mm": b["lunghezza_totale"], "Sequenza_Tagli": "-".join(map(str, b["tagli"])), "Sfrido_Residuo_mm": int(b["spazio_rimasto"]+spessore_taglio)} for i, b in enumerate(res["piani"])])
-            c1, c2, c3 = st.columns(3)
-            c1.download_button("📥 CSV", make_pure_csv(df_exp), "Nesting_1D.csv")
-            c2.download_button("📊 EXCEL", make_real_excel(df_exp), "Nesting_1D.xlsx")
-            c3.button("📄 PDF (Funzione Sospesa)", disabled=True)
-            plt.close(fig_1d)
+            df_exp = pd.DataFrame([{"ID_Barra": f"BAR-{i+1}", "Codice_Materiale": b["codice"], "Lunghezza_Totale_mm": b["lunghezza_totale"], "Sequenza_Tagli": "-".join(map(str, b["tagli"])), "Sfrido_Residuo_mm": int(b["spazio_rimasto"]+spessore_taglio)} for i, b in enumerate(res["piani"])])
+            c1, c2 = st.columns(2)
+            c1.download_button("📥 SCARICA REPORT CSV", make_pure_csv(df_exp), "Nesting_Barre_MultiCodice.csv")
+            c2.download_button("📊 SCARICA REPORT EXCEL", make_real_excel(df_exp), "Nesting_Barre_MultiCodice.xlsx")
 
 # =============================================================================
-# SEZIONE 2D - LAMIERE
+# SEZIONE 2D - LAMIERE MULTI-CODICE
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
-    
     with col2_left:
         st.markdown(f"### {T['commessa']}")
-        num_ordine_2d = st.text_input(T["ordine"], value="ORD-2D-002", key="num_2d")
-        nome_cliente_2d = st.text_input(T["cliente"], value="Carpenteria Metallica Srl", key="cli_2d")
+        num_ordine_2d = st.text_input(T["ordine"], value="ORD-2D-MULTI", key="num_2d")
+        nome_cliente_2d = st.text_input(T["cliente"], value="Laser Tech Srl", key="cli_2d")
         
         st.markdown(f"### {T['magazzino']}")
         tabella_stk_2d = st.data_editor(st.session_state.magazzino_2d, num_rows="dynamic", key="stk_ed_2d", use_container_width=True)
         st.session_state.magazzino_2d = tabella_stk_2d
         
         st.markdown(f"### {T['header_2d']}")
-        W_lamiera = st.number_input("LARGHEZZA LASTRA X (mm)", value=3000, step=100, key="W_2d")
-        H_lamiera = st.number_input("ALTEZZA LASTRA Y (mm)", value=1500, step=100, key="H_2d")
-        spessore_lastra = st.number_input(T["spessore"], value=6.0, step=0.5, key="thk_2d")
         bordo_lamiera = st.number_input(T["bordo"], value=20, step=5, key="bordo_2d")
-        dist_sicurezza = st.number_input("DISTANZA TRA I PEZZI (mm)", value=12.0, step=2.0, key="dist_2d")
-        area_min_2d = st.number_input(T["area_min_2d"], value=0.40, step=0.05, key="amin_2d")
+        dist_sicurezza = st.number_input("DISTANZA TRA I PEZZI (mm)", value=15.0, step=2.0, key="dist_2d")
         
         st.markdown("### 🛠️ CARICAMENTO DXF REALE ORIGINALE")
         file_dxf_caricati = st.file_uploader("Trascina qui i tuoi veri file geometrici .dxf", type=["dxf"], accept_multiple_files=True, key="dxf_net_2d")
         
-        geometria_rilevata = None
-        w_rilevata, h_rilevata = 750, 220 
-        nome_file_componente = "PEZZO_DEFAULT.DXF"
+        w_rilevata, h_rilevata = 500, 300
+        nome_file_componente = "PIASTRA_DI_BASE.DXF"
         
         if file_dxf_caricati:
             file_attivo = file_dxf_caricati[-1]
             nome_file_componente = file_attivo.name
             bytes_dxf = file_attivo.getvalue()
-            
-            geom, w_cad, h_cad = parse_uploaded_dxf(bytes_dxf)
-            if geom and w_cad and h_cad:
-                geometria_rilevata = geom
+            _, w_cad, h_cad = parse_uploaded_dxf(bytes_dxf)
+            if w_cad and h_cad:
                 w_rilevata, h_rilevata = w_cad, h_cad
-                st.success(f"✔️ Geometria DXF Rilevata! Dimensioni reali pezzo: {w_rilevata} x {h_rilevata} mm")
+                st.success(f"✔️ Geometria DXF Rilevata: {w_rilevata} x {h_rilevata} mm")
             else:
-                st.error("⚠️ Il DXF caricato non contiene entità leggibili standard. Uso la sagoma di fallback.")
-                
+                st.error("⚠️ Errore lettura geometrica standard. Sagoma generica applicata.")
+            
+            # Pre-popoliamo la tabella legando il pezzo al primo codice disponibile in magazzino
+            codice_predefinito = str(tabella_stk_2d.iloc[0]["CODICE MATERIALE"]) if not tabella_stk_2d.empty else "L_FE_6MM"
             st.session_state.pezzi_2d = pd.DataFrame([{
                 "NOME PEZZO DXF": nome_file_componente, 
-                "QTY DA PRODURRE": 12, 
+                "CODICE RICHIESTO": codice_predefinito,
+                "QTY DA PRODURRE": 6, 
                 "LARGHEZZA (mm)": w_rilevata, 
                 "ALTEZZA (mm)": h_rilevata
             }])
             
-        tabella_pezzi_2d = st.data_editor(st.session_state.pezzi_2d, num_rows="fixed", key="edit_pezzi_2d", use_container_width=True)
+        tabella_pezzi_2d = st.data_editor(st.session_state.pezzi_2d, num_rows="dynamic", key="edit_pezzi_2d", use_container_width=True)
         st.session_state.pezzi_2d = tabella_pezzi_2d
         
         if st.button(T["esegui"], type="primary", key="run_2d"):
-            totale_pezzi_richiesti = int(tabella_pezzi_2d["QTY DA PRODURRE"].sum()) if not tabella_pezzi_2d.empty else 12
-            
             piani_piazzati = []
-            x_step = w_rilevata + dist_sicurezza
-            y_step = h_rilevata + dist_sicurezza
+            lastre_usate_report = []
             
-            pezzi_piazzati = 0
-            x_cursor = bordo_lamiera
-            
-            while x_cursor + w_rilevata <= W_lamiera - bordo_lamiera and pezzi_piazzati < totale_pezzi_richiesti:
-                y_cursor = bordo_lamiera
-                while y_cursor + h_rilevata <= H_lamiera - bordo_lamiera and pezzi_piazzati < totale_pezzi_richiesti:
-                    piani_piazzati.append({
-                        "id": f"P-{pezzi_piazzati+1:02d}",
-                        "nome": nome_file_componente,
-                        "traslazione": (x_cursor, y_cursor),
-                        "geometria_originale": geometria_rilevata,
-                        "dim_w": w_rilevata,
-                        "dim_h": h_rilevata,
-                        "color": "#1E3A8A" if (pezzi_piazzati % 2 == 0) else "#065F46"
-                    })
-                    pezzi_piazzati += 1
-                    y_cursor += y_step
-                x_cursor += x_step
+            # Eseguiamo il nesting separando per ogni riga/codice inserito dall'utente
+            for idx_riga, riga_pezzo in tabella_pezzi_2d.iterrows():
+                if pd.isnull(riga_pezzo["CODICE RICHIESTO"]) or pd.isnull(riga_pezzo["QTY DA PRODURRE"]): continue
                 
-            area_totale_mq = (W_lamiera * H_lamiera) / 1_000_000
-            area_singolo_mq = (w_rilevata * h_rilevata * 0.85) / 1_000_000 
-            area_taglio_mq = len(piani_piazzati) * area_singolo_mq
-            area_scarto_mq = round(area_totale_mq - area_taglio_mq, 2)
+                cod_mat_richiesto = str(riga_pezzo["CODICE RICHIESTO"]).strip()
+                qty_da_fare = int(riga_pezzo["QTY DA PRODURRE"])
+                w_p = float(riga_pezzo["LARGHEZZA (mm)"])
+                h_p = float(riga_pezzo["ALTEZZA (mm)"])
+                
+                # Trova la prima lastra compatibile con questo codice nel magazzino
+                lastra_selezionata = None
+                for _, l_row in tabella_stk_2d.iterrows():
+                    if str(l_row["CODICE MATERIALE"]).strip() == cod_mat_richiesto and int(l_row["QTY"]) > 0:
+                        lastra_selezionata = l_row
+                        break
+                
+                # Se non trova la lastra, usa dimensioni standard di fallback
+                W_l = float(lastra_selezionata["LARGHEZZA X (mm)"]) if lastra_selezionata is not None else 3000.0
+                H_l = float(lastra_selezionata["ALTEZZA Y (mm)"]) if lastra_selezionata is not None else 1500.0
+                
+                # Piazzamento a griglia sulla lastra individuata
+                x_step = w_p + dist_sicurezza
+                y_step = h_p + dist_sicurezza
+                pezzi_messi = 0
+                x_cursor = bordo_lamiera
+                
+                while x_cursor + w_p <= W_l - bordo_lamiera and pezzi_messi < qty_da_fare:
+                    y_cursor = bordo_lamiera
+                    while y_cursor + h_p <= H_l - bordo_lamiera and pezzi_messi < qty_da_fare:
+                        piani_piazzati.append({
+                            "id": f"P-{cod_mat_richiesto}-{pezzi_messi+1}",
+                            "codice": cod_mat_richiesto,
+                            "traslazione": (x_cursor, y_cursor),
+                            "dim_w": w_p,
+                            "dim_h": h_p,
+                            "W_lastra": W_l,
+                            "H_lastra": H_l,
+                            "color": "#1E3A8A" if "FE" in cod_mat_richiesto else "#065F46"
+                        })
+                        pezzi_messi += 1
+                        y_cursor += y_step
+                    x_cursor += x_step
+                
+                lastre_usate_report.append({
+                    "CODICE": cod_mat_richiesto, 
+                    "W": W_l, "H": H_l, 
+                    "PEZZI_PRODOTTI": pezzi_messi,
+                    "RICHIESTI": qty_da_fare
+                })
             
-            st.session_state.results_2d = {
-                "piazzamenti": pianos_piazzati if 'pianos_piazzati' in locals() else piani_piazzati,
-                "scarto_mq": area_scarto_mq,
-                "saturazione": f"{round((area_taglio_mq/area_totale_mq)*100, 1)}%",
-                "dimension_lastra_usata": {"W": W_lamiera, "H": H_lamiera, "THK": spessore_lastra}
-            }
+            st.session_state.results_2d = {"piazzamenti": piani_piazzati, "report_lastre": lastre_usate_report}
             st.session_state["2d_confermato"] = False
             st.rerun()
 
@@ -427,58 +431,37 @@ with tab_2d:
             res2d = st.session_state.results_2d
             
             if not st.session_state["2d_confermato"]:
-                st.warning("⚠️ SIMULAZIONE ATTIVA")
-                if st.button(T["conferma_stock"], key="btn_conf_2d", type="secondary"):
+                st.warning("⚠️ SIMULAZIONE DISPOSIZIONE LAMIERE")
+                if st.button(T["conferma_stock"], key="btn_conf_2d"):
+                    # Scarica reali lamiere
+                    df_stk_2d_attuale = st.session_state.magazzino_2d.copy()
+                    for l_usata in res2d["report_lastre"]:
+                        if l_usata["PEZZI_PRODOTTI"] > 0:
+                            idx = df_stk_2d_attuale[df_stk_2d_attuale["CODICE MATERIALE"] == l_usata["CODICE"]].index
+                            if len(idx) > 0:
+                                df_stk_2d_attuale.loc[idx[0], "QTY"] = max(0, df_stk_2d_attuale.loc[idx[0], "QTY"] - 1)
+                    st.session_state.magazzino_2d = df_stk_2d_attuale
                     st.session_state["2d_confermato"] = True
                     st.rerun()
             else:
-                st.success(T["stock_applicato"])
+                st.success(T["stock_appllicato"])
+            
+            # Rappresentazione Grafica di ciascuna lastra elaborata
+            for l_rep in res2d["report_lastre"]:
+                st.markdown(f"#### Lastra Codice: **{l_rep['CODICE']}** ({l_rep['W']}x{l_rep['H']} mm) — Piazzati {l_rep['PEZZI_PRODOTTI']}/{l_rep['RICHIESTI']} pezzi")
                 
-            st.markdown(f"<h2>📐 Anteprima Reale DXF Caricato — Rendimento: {res2d['saturazione']}</h2>", unsafe_allow_html=True)
-            
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.set_facecolor('#0F0F11') 
-            fig.patch.set_facecolor('#1A1A1A')
-            
-            ax.add_patch(patches.Rectangle((0, 0), W_lamiera, H_lamiera, fill=False, color="#FF5722", linewidth=2.5))
-            
-            for p in res2d["piazzamenti"]:
-                tx, ty = p["traslazione"]
-                g_orig = p["geometria_originale"]
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.set_facecolor('#0F0F11'); fig.patch.set_facecolor('#1A1A1A')
+                ax.add_patch(patches.Rectangle((0, 0), l_rep['W'], l_rep['H'], fill=False, color="#FF5722", linewidth=2))
                 
-                if g_orig:
-                    ox, oy = g_orig.get("offset", (0,0))
-                    for line in g_orig["linee"]:
-                        ax.plot([line[0][0] - ox + tx, line[1][0] - ox + tx], 
-                                [line[0][1] - oy + ty, line[1][1] - oy + ty], color="#E5E7EB", linewidth=1.0)
-                    for circle in g_orig["cerchi"]:
-                        ax.add_patch(patches.Circle((circle["center"][0] - ox + tx, circle["center"][1] - oy + ty), 
-                                                    circle["radius"], facecolor="#0F0F11", edgecolor="#38BDF8", linewidth=0.8))
-                    for poly in g_orig["polilinee"]:
-                        poly_trans = [(pt[0] - ox + tx, pt[1] - oy + ty) for pt in poly]
-                        ax.add_patch(patches.Polygon(np.array(poly_trans), closed=True, facecolor=p["color"], alpha=0.4, edgecolor="#E5E7EB", linewidth=1.0))
-                else:
-                    p_box = [(pt[0] + tx, pt[1] + ty) for pt in [[0,0], [p["dim_w"],0], [p["dim_w"],p["dim_h"]], [0,p["dim_h"]]]]
-                    ax.add_patch(patches.Polygon(np.array(p_box), closed=True, facecolor=p["color"], alpha=0.6, edgecolor="#FFF"))
+                # Filtra e disegna solo i rettangoli appartenenti a questa specifica lastra/codice
+                for p in res2d["piazzamenti"]:
+                    if p["codice"] == l_rep["CODICE"]:
+                        tx, ty = p["traslazione"]
+                        ax.add_patch(patches.Rectangle((tx, ty), p["dim_w"], p["dim_h"], facecolor=p["color"], edgecolor="#FFF", alpha=0.7))
+                        ax.text(tx + p["dim_w"]/2, ty + p["dim_h"]/2, p["id"].split('-')[-1], color="white", fontsize=8, ha='center', va='center')
                 
-                ax.text(tx + p["dim_w"]/2, ty + p["dim_h"]/2, f"{p['id']}", color="#FFFFFF", fontsize=8, weight='bold', ha='center', va='center')
-                
-            ax.set_xlim(-100, W_lamiera + 100)
-            ax.set_ylim(-100, H_lamiera + 100)
-            ax.grid(color='#262626', linestyle=':', linewidth=0.5)
-            ax.set_aspect('equal')
-            st.pyplot(fig)
-            
-            dxf_string_reale = generate_industrial_dxf(W_lamiera, H_lamiera, res2d["piazzamenti"])
-            
-            st.markdown(f"### {T['esporta']}")
-            df_exp_2d = pd.DataFrame([{"ID_Ordine": num_ordine_2d, "Cliente": nome_cliente_2d, "Pezzi_Nesting": len(res2d['piazzamenti']), "Efficienza": res2d['saturazione'], "Scarto_m2": res2d['scarto_mq']}])
-            
-            bx1, bx2, bx3, bx4 = st.columns(4)
-            bx1.download_button("📥 DOWNLOAD CSV", make_pure_csv(df_exp_2d), "Nesting_2D.csv")
-            bx2.download_button("📊 DOWNLOAD EXCEL", make_real_excel(df_exp_2d), "Nesting_2D.xlsx")
-            bx3.download_button("🛠️ SCARICA DXF NESTING REAL 1:1", dxf_string_reale, file_name=f"Layout_CAM_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
-            bx4.button("📄 PDF DISATTIVATO (Manca Componente Server)", disabled=True)
-            plt.close(fig)
-        else:
-            st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
+                ax.set_xlim(-50, l_rep['W'] + 50); ax.set_ylim(-50, l_rep['H'] + 50)
+                ax.set_aspect('equal'); ax.axis('off')
+                st.pyplot(fig)
+                plt.close(fig)
