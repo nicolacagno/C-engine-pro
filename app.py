@@ -7,12 +7,18 @@ import matplotlib.patches as patches
 from datetime import datetime
 
 # =============================================================================
-# STATO DELLA SESSIONE (Persistenza magazzino e pezzi tra i ricaricamenti)
+# STATO DELLA SESSIONE (Persistenza magazzino e risultati temporanei)
 # =============================================================================
 if "results_1d" not in st.session_state:
     st.session_state.results_1d = None
 if "results_2d" not in st.session_state:
     st.session_state.results_2d = None
+
+# Stato per tracciare se la simulazione corrente è già stata confermata a magazzino
+if "1d_confermato" not in st.session_state:
+    st.session_state["1d_confermato"] = False
+if "2d_confermato" not in st.session_state:
+    st.session_state["2d_confermato"] = False
 
 if "magazzino_1d" not in st.session_state:
     st.session_state.magazzino_1d = pd.DataFrame([
@@ -88,6 +94,8 @@ lang = st.sidebar.selectbox("🌐 LINGUA / LANGUAGE / SPRACHE / LANGUE / IDIOMA 
 if st.sidebar.button("🔄 RESET GENERAL"):
     st.session_state.results_1d = None
     st.session_state.results_2d = None
+    st.session_state["1d_confermato"] = False
+    st.session_state["2d_confermato"] = False
     if "pezzi_2d" in st.session_state:
         st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
     st.rerun()
@@ -101,15 +109,16 @@ TXT = {
         "ordine": "NUMERO ORDINE",
         "cliente": "NOME CLIENTE",
         "parametri_macchina": "🔧 PARAMETRI MACCHINA",
-        "magazzino": "📦 INVENTARIO DISPONIBILE (AGGIORNAMENTO AUTOMATICO)",
+        "magazzino": "📦 INVENTARIO IN MAGAZZINO (MODIFICATO SOLO DOPO CONFERMA)",
         "tagli": "✂️ LISTA TAGLI RICHIESTI",
-        "esegui": "🚀 ELABORA ED AGGIORNA MAGAZZINO",
+        "esegui": "🚀 ELABORA ED ESAMINA SOLUZIONE (SIMULAZIONE)",
+        "conferma_stock": "✅ CONFERMA E APPLICA A MAGAZZINO REALE",
+        "stock_applicato": "💥 Magazzino aggiornato con successo! Il materiale è stato scaricato.",
         "spessore": "SPESSORE LASTRA (mm)",
         "bordo": "BORDO PERIMETRALE (mm)",
         "esporta": "💾 ESPORTA DATI DI PRODUZIONE",
         "scarto_min_1d": "SPEZZONE MINIMO REINTEGRO (mm)",
         "area_min_2d": "AREA MINIMA RIUTILIZZO (m²)",
-        "salva_scarto": "📦 AGGIUNGI SCARTO QUALIFICATO IN STOCK",
         "standby_2d": "IN ATTESA DI CARICAMENTO DXF\n\nInserisci i file geometrici .dxf, imposta il quantitativo dei singoli pezzi e avvia il nesting."
     },
     "EN": {
@@ -120,15 +129,16 @@ TXT = {
         "ordine": "ORDER NUMBER",
         "cliente": "CUSTOMER NAME",
         "parametri_macchina": "🔧 MACHINE PARAMETERS",
-        "magazzino": "📦 STOCK INVENTORY (AUTO-UPDATED)",
+        "magazzino": "📦 STOCK INVENTORY (UPDATED ONLY UPON CONFIRMATION)",
         "tagli": "✂️ CUT LIST",
-        "esegui": "🚀 COMPUTE NESTING & SUBTRACT STOCK",
+        "esegui": "🚀 COMPUTE & REVIEW LAYOUT (SIMULATION)",
+        "conferma_stock": "✅ CONFIRM & SUBTRACT FROM REAL STOCK",
+        "stock_applicato": "💥 Inventory updated successfully! Materials subtracted.",
         "spessore": "SHEET THICKNESS (mm)",
         "bordo": "PERIMETER MARGIN (mm)",
         "esporta": "💾 EXPORT PRODUCTION DATA",
         "scarto_min_1d": "MINIMUM REUSABLE LENGTH (mm)",
         "area_min_2d": "MINIMUM REUSABLE AREA (m²)",
-        "salva_scarto": "📦 SAVE QUALIFIED SCRAP TO STOCK",
         "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts, set the required quantities and execute nesting."
     },
     "DE": {
@@ -139,15 +149,16 @@ TXT = {
         "ordine": "BESTELLNUMMER",
         "cliente": "KUNDENAME",
         "parametri_macchina": "🔧 MASCHINENPARAMETER",
-        "magazzino": "📦 VERFÜGBARES LAGER (AUTOMATISCH AKTUALISIERT)",
+        "magazzino": "📦 LAGERBESTAND (ÄNDERUNG NUR NACH BESTÄTIGUNG)",
         "tagli": "✂️ SCHNITTLISTE",
-        "esegui": "🚀 VERSCHACHTELUNG STARTEN & LAGER AKTUALISIEREN",
+        "esegui": "🚀 VERSCHACHTELUNG SIMULIEREN & PRÜFEN",
+        "conferma_stock": "✅ BESTÄTIGEN & VOM REALEN LAGER ABZIEHEN",
+        "stock_applicato": "💥 Lager erfolgreich aktualisiert! Material abgebucht.",
         "spessore": "BLECHDICKE (mm)",
         "bordo": "RANDABSTAND (mm)",
         "esporta": "💾 PRODUKTIONSDATEN EXPORTIEREN",
         "scarto_min_1d": "MINDESTLÄNGE WIEDERVERWENDUNG (mm)",
         "area_min_2d": "MINDESTFLÄCHE RESTE (m²)",
-        "salva_scarto": "📦 RESTSTÜCK INS LAGER ÜBERNEHMEN",
         "standby_2d": "WARTEN AUF DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung."
     },
     "FR": {
@@ -158,15 +169,16 @@ TXT = {
         "ordine": "NUMÉRO DE COMMANDE",
         "cliente": "NOM DU CLIENT",
         "parametri_macchina": "🔧 PARAMÈTRES MACHINE",
-        "magazzino": "📦 INVENTAIRE DISPONIBILE (MIS À JOUR AUTO)",
+        "magazzino": "📦 INVENTAIRE STOCK (MODIFIÉ UNIQUEMENT APRÈS CONFIRMATION)",
         "tagli": "✂️ LISTE DE COUPE",
-        "esegui": "🚀 LANCER L'IMBRICATION ET METTRE À JOUR LE STOCK",
+        "esegui": "🚀 CALCULER & REVOIR L'IMBRICATION (SIMULATION)",
+        "conferma_stock": "✅ CONFIRMER ET MISE À JOUR DU STOCK RÉEL",
+        "stock_applicato": "💥 Inventaire mis à jour avec succès! Matériel déduit.",
         "spessore": "ÉPAISSEUR TÔLE (mm)",
         "bordo": "MARGE PÉRIMÉTRIQUE (mm)",
         "esporta": "💾 EXPORTER LES DONNÉES DE PRODUCTION",
         "scarto_min_1d": "CHUTE MINIMUM RÉCUPÉRABLE (mm)",
         "area_min_2d": "SURFACE MINIMUM RÉCUPÉRABLE (m²)",
-        "salva_scarto": "📦 AJOUTER LA CHUTE QUALIFIÉE AU STOCK",
         "standby_2d": "EN ATTENTE DE FICHIERS DXF\n\nChargez les fichiers géométriques .dxf, définissez les quantités par pièce et lancez l'imbrication."
     },
     "ES": {
@@ -177,15 +189,16 @@ TXT = {
         "ordine": "NÚMERO DE ORDEN",
         "cliente": "NOMBRE DEL CLIENTE",
         "parametri_macchina": "🔧 PARÁMETROS DE LA MÁQUINA",
-        "magazzino": "📦 INVENTARIO DISPONIBLE (ACTUALIZADO AUTO)",
+        "magazzino": "📦 INVENTARIO STOCK (MODIFICADO SOLO TRAS CONFIRMACIÓN)",
         "tagli": "✂️ LISTA DE CORTES",
-        "esegui": "🚀 EJECUTAR NESTING Y ACTUALIZAR STOCK",
+        "esegui": "🚀 CALCULAR Y REVISAR NESTING (SIMULACIÓN)",
+        "conferma_stock": "✅ CONFIRMAR Y DESCONTARE DEL STOCK REAL",
+        "stock_applicato": "💥 ¡Inventario actualizado con éxito! Material descontado.",
         "spessore": "ESPESOR DE CHAPA (mm)",
         "bordo": "MARGEN PERIMETRAL (mm)",
         "esporta": "💾 EXPORTAR DATOS DE PRODUCCIÓN",
         "scarto_min_1d": "LONGITUD MÍNIMA REUTILIZABLE (mm)",
         "area_min_2d": "ÁREA MÍNIMA REUTILIZABLE (m²)",
-        "salva_scarto": "📦 AÑADIR RECORTE CALIFICADO AL STOCK",
         "standby_2d": "ESPERANDO ARCHIVOS DXF\n\nCargue los archivos .dxf de las piezas, defina las cantidades requeridas y ejecute el nesting."
     },
     "RO": {
@@ -196,15 +209,16 @@ TXT = {
         "ordine": "NUMĂR COMANDĂ",
         "cliente": "NUME CLIENT",
         "parametri_macchina": "🔧 PARAMETRII UTILAJULUI",
-        "magazzino": "📦 STOC DISPONIBIL (ACTUALIZARE AUTOMATĂ)",
+        "magazzino": "📦 STOC DISPONIBIL (ACTUALIZAT DOAR DUPĂ CONFIRMARE)",
         "tagli": "✂️ LISTĂ DE TĂIERE",
-        "esegui": "🚀 EXECUTE NESTING ȘI SCADE DIN STOC",
+        "esegui": "🚀 CALCULEAZĂ ȘI VERIFICĂ NESTING-UL (SIMULARE)",
+        "conferma_stock": "✅ CONFIRMĂ ȘI SCADE DIN STOCUL REAL",
+        "stock_applicato": "💥 Stocul a fost actualizat cu succes! Materialul a fost scăzut.",
         "spessore": "GROSIME FOAIE (mm)",
         "bordo": "MARGINE PERIMETRALĂ (mm)",
         "esporta": "💾 EXPORTĂ DATELE DE PRODUCȚIE",
         "scarto_min_1d": "LUNGIME MINIMĂ REUTILIZABILĂ (mm)",
         "area_min_2d": "SUPRAFAȚĂ MINIMĂ REUTILIZABILĂ (m²)",
-        "salva_scarto": "📦 ADAUGĂ DEȘEUL CALIFICAT ÎN STOC",
         "standby_2d": "ÎN AȘTEPTAREA FIȘIERELOR DXF\n\nÎncărcați fișierele geometrice .dxf, setați cantitățile necesare pentru fiecare piesă și porniți optimizarea."
     },
     "PT": {
@@ -215,15 +229,16 @@ TXT = {
         "ordine": "NÚMERO DA ORDEM",
         "cliente": "NOME DO CLIENTE",
         "parametri_macchina": "🔧 PARÂMETROS DA MÁQUINA",
-        "magazzino": "📦 ESTOQUE DISPONÍVEL (ATUALIZAÇÃO AUTO)",
+        "magazzino": "📦 ESTOQUE (ATUALIZADO APENAS APÓS CONFIRMAÇÃO)",
         "tagli": "✂️ LISTA DE CORTES",
-        "esegui": "🚀 CALCULAR NESTING E ATUALIZAR ESTOQUE",
+        "esegui": "🚀 CALCULAR E REVISAR NESTING (SIMULAÇÃO)",
+        "conferma_stock": "✅ CONFIRMAR E ATUALIZAR ESTOQUE REAL",
+        "stock_applicato": "💥 Estoque atualizado com sucesso! Material baixado.",
         "spessore": "ESPESSURA DA CHAPA (mm)",
         "bordo": "MARGEM PERIMETRAL (mm)",
         "esporta": "💾 EXPORTAR DADOS DE PRODUÇÃO",
         "scarto_min_1d": "COMPRIMENTO MÍNIMO REUTILIZÁVEL (mm)",
         "area_min_2d": "ÁREA MÍNIMA REUTILIZÁVEL (m²)",
-        "salva_scarto": "📦 ADICIONAR RECORTE QUALIFICADO AO ESTOQUE",
         "standby_2d": "AGUARDANDO ARQUIVOS DXF\n\nCarregue os arquivos .dxf das peças, defina as quantidades necessárias e execute o nesting."
     },
     "HU": {
@@ -234,15 +249,16 @@ TXT = {
         "ordine": "RENDELÉSSZÁM",
         "cliente": "ÜGYFÉL NEVE",
         "parametri_macchina": "🔧 GÉPI PARAMÉTEREK",
-        "magazzino": "📦 ELÉRHETŐ RAKTÁRKÉSZLET (AUTO FRISSÍTÉS)",
+        "magazzino": "📦 RAKTÁRKÉSZLET (CSAK JÓVÁHAGYÁS UTÁN VÁLTOZIK)",
         "tagli": "✂️ VÁGÁSI LISTA",
-        "esegui": "🚀 FÉSÜLÉS INDÍTÁSA ÉS KÉSZLET LEVONÁSA",
+        "esegui": "🚀 FÉSÜLÉS TERVEZÉSE ÉS ELLENŐRZÉSE (SZIMULÁCIÓ)",
+        "conferma_stock": "✅ JÓVÁHAGYÁS ÉS LEVONÁS A VALÓDI KÉSZLETBŐL",
+        "stock_applicato": "💥 A raktárkészlet sikeresen frissítve! Anyag levonva.",
         "spessore": "LEMEZVASTAGSÁG (mm)",
         "bordo": "PEREMEZÉSI MARGÓ (mm)",
         "esporta": "💾 TERMELÉSI ADATOK EXPORTÁLÁSA",
         "scarto_min_1d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ HOSSZ (mm)",
         "area_min_2d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ TERÜLET (m²)",
-        "salva_scarto": "📦 MINŐSÍTETT SELEJT RAKTÁRBA MENTÉSE",
         "standby_2d": "DXF FÁJLOKRA VÁR\n\nTöltse fel a .dxf geometriai fájlokat, adja meg a darabszámokat, és indítsa el a fésülést."
     },
     "PL": {
@@ -253,15 +269,16 @@ TXT = {
         "ordine": "NUMER ZLECENIA",
         "cliente": "NAZWA KLIENTA",
         "parametri_macchina": "🔧 PARAMETRY MASZYNY",
-        "magazzino": "📦 DOSTĘPNY MAGAZYN (AUTOMATYCZNA AKTUALIZACJA)",
+        "magazzino": "📦 STAN MAGAZYNOWY (ZMIANA TYLKO PO POTWIERDZENIU)",
         "tagli": "✂️ LISTA CIĘĆ",
-        "esegui": "🚀 URUCHOM NESTING I ODLICZ Z MAGAZYNU",
+        "esegui": "🚀 OBLICZ I SPRAWDŹ NESTING (SYMULACJA)",
+        "conferma_stock": "✅ POTWIERDŹ I ODLICZ Z REALNEGO MAGAZYNU",
+        "stock_applicato": "💥 Magazyn zaktualizowany pomyślnie! Materiał został odliczony.",
         "spessore": "GRUBOŚĆ BLACHY (mm)",
         "bordo": "MARGINES OBWODOWY (mm)",
         "esporta": "💾 EKSPORTUJ DANE PRODUKCYJNE",
         "scarto_min_1d": "MINIMALNA DŁUGOŚĆ ODPADU UŻYTECZNEGO (mm)",
         "area_min_2d": "MINIMALNA POWIERZCHNIA ODPADU UŻYTECZNEGO (m²)",
-        "salva_scarto": "📦 DODAJ UŻYTECZNY ODPAD DO MAGAZYNU",
         "standby_2d": "OCZEKIWANIE NA PLIKI DXF\n\nZaładuj pliki geometryczne .dxf, ustaw ilości dla każdego elementu i uruchom optymalizację."
     }
 }
@@ -301,6 +318,7 @@ with tab_1d:
         df_cut = pd.DataFrame([{"LUNGHEZZA (mm)": 1200, "QTY": 4}, {"LUNGHEZZA (mm)": 850, "QTY": 6}, {"LUNGHEZZA (mm)": 340, "QTY": 12}])
         tabella_cut = st.data_editor(df_cut, num_rows="dynamic", key="cut_ed_1d", use_container_width=True)
         
+        # IL PULSANTE DI ESECUZIONE FA SOLO UNA SIMULAZIONE
         if st.button(T["esegui"], type="primary", key="run_1d"):
             reqs = []
             for _, r in tabella_cut.iterrows():
@@ -308,17 +326,19 @@ with tab_1d:
                     reqs.extend([int(r["LUNGHEZZA (mm)"])] * int(r["QTY"]))
             reqs.sort(reverse=True)
             
-            stk_dict = {}
+            # Leggiamo lo stock attuale per la simulazione
+            stk_dict_sim = {}
             for _, r in tabella_stk.iterrows():
                 if pd.notnull(r["LUNGHEZZA (mm)"]) and pd.notnull(r["QTY"]):
-                    stk_dict[int(r["LUNGHEZZA (mm)"])] = int(r["QTY"])
+                    stk_dict_sim[int(r["LUNGHEZZA (mm)"])] = int(r["QTY"])
             
             piani_barre = []
             scarti_idonei = []
+            barre_usate_per_conferma = {} # Tracciamo cosa scaricare se l'utente conferma
             
             for pezzo in reqs:
                 inserito = False
-                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
+                for b in piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -326,11 +346,14 @@ with tab_1d:
                         break
                 if not inserito:
                     lunghezza_scelta = 6000
-                    disponibili = [l for l, q in stk_dict.items() if q > 0]
+                    disponibili = [l for l, q in stk_dict_sim.items() if q > 0]
                     if disponibili:
                         disponibili.sort()
                         lunghezza_scelta = disponibili[0]
-                        stk_dict[lunghezza_scelta] -= 1
+                        stk_dict_sim[lunghezza_scelta] -= 1
+                    
+                    # Registriamo l'uso effettivo per lo scarico reale futuro
+                    barre_usate_per_conferma[lunghezza_scelta] = barre_usate_per_conferma.get(lunghezza_scelta, 0) + 1
                     
                     piani_barre.append({
                         "lunghezza_totale": lunghezza_scelta,
@@ -338,22 +361,52 @@ with tab_1d:
                         "spazio_rimasto": lunghezza_scelta - intestazione_barra - pezzo
                     })
             
-            nuovo_stk_list = [{"LUNGHEZZA (mm)": l, "QTY": q} for l, q in stk_dict.items()]
-            st.session_state.magazzino_1d = pd.DataFrame(nuovo_stk_list)
-            
             for b in piani_barre:
                 sfrido_reale = int(b["spazio_rimasto"] + spessore_taglio)
                 if sfrido_reale >= spezzone_min_1d:
                     scarti_idonei.append(sfrido_reale)
             
-            st.session_state.results_1d = {"piani": piani_barre, "scarti": scarti_idonei}
+            # Salviamo i dati temporanei della simulazione nello stato della sessione
+            st.session_state.results_1d = {
+                "piani": piani_barre, 
+                "scarti": scarti_idonei,
+                "barre_da_scaricare": barre_usate_per_conferma
+            }
+            st.session_state["1d_confermato"] = False # Nuova simulazione pronta, non ancora applicata
             st.rerun()
 
     with col_right:
         if st.session_state.results_1d:
             res = st.session_state.results_1d
-            st.markdown("### SCHEMA DI TAGLIO BARRE OTTIMIZZATO")
             
+            # Mostra avviso se la simulazione non è ancora stata consolidata a magazzino
+            if not st.session_state["1d_confermato"]:
+                st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto per salvare.")
+                
+                # PULSANTE DI CONFERMA REALE E FINALE
+                if st.button(T["conferma_stock"], key="btn_conf_1d", type="secondary"):
+                    # Scarichiamo il materiale usato
+                    stk_reale = {}
+                    for _, r in st.session_state.magazzino_1d.iterrows():
+                        stk_reale[int(r["LUNGHEZZA (mm)"])] = int(r["QTY"])
+                    
+                    for lung, qty_da_togliere in res["barre_da_scaricare"].items():
+                        if lung in stk_reale:
+                            stk_reale[lung] = max(0, stk_reale[lung] - qty_da_togliere)
+                    
+                    # Carichiamo gli scarti qualificati recuperati
+                    for sc in res["scarti"]:
+                        stk_reale[sc] = stk_reale.get(sc, 0) + 1
+                    
+                    # Ricostruiamo il dataframe del magazzino reale
+                    nuovo_stk_list = [{"LUNGHEZZA (mm)": l, "QTY": q} for l, q in stk_reale.items()]
+                    st.session_state.magazzino_1d = pd.DataFrame(nuovo_stk_list)
+                    st.session_state["1d_confermato"] = True
+                    st.rerun()
+            else:
+                st.success(T["stock_applicato"])
+            
+            st.markdown("### SCHEMA DI TAGLIO BARRE OTTIMIZZATO")
             for idx, b in enumerate(res["piani"]):
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
                 html_segmenti = "".join([f'<div class="bar-segment" style="width:{(t / b["lunghezza_totale"]) * 100}%; background-color:{HEX_COLORI.get(str(t), HEX_COLORI["default"])};">{t}</div>' for t in b["tagli"]])
@@ -369,16 +422,7 @@ with tab_1d:
                 """, unsafe_allow_html=True)
             
             if res["scarti"]:
-                st.info(f"Spezzoni utili pronti per il reintegro (≥ {spezzone_min_1d}mm): {res['scarti']}")
-                if st.button(T["salva_scarto"], key="save_sc_1d"):
-                    for sc in res["scarti"]:
-                        st.session_state.magazzino_1d = pd.concat([
-                            st.session_state.magazzino_1d, 
-                            pd.DataFrame([{"LUNGHEZZA (mm)": sc, "QTY": 1}])
-                        ], ignore_index=True)
-                    st.success("Inventario aggiornato con gli scarti recuperati!")
-                    st.session_state.results_1d["scarti"] = []
-                    st.rerun()
+                st.info(f"Spezzoni utili identificati per il reintegro (≥ {spezzone_min_1d}mm): {res['scarti']}")
 
             st.markdown(f"### {T['esporta']}")
             df_exp = pd.DataFrame([
@@ -416,7 +460,6 @@ with tab_2d:
         dist_sicurezza = st.number_input("DISTANZA TRA I PEZZI (mm)", value=12.0, step=2.0, key="dist_2d")
         area_min_2d = st.number_input(T["area_min_2d"], value=0.40, step=0.05, key="amin_2d")
         
-        # Caricamento file DXF con configuratore quantità singoli componenti
         st.markdown("### 🛠️ IMPOSTAZIONE COMPONENTI DXF")
         file_dxf_caricati = st.file_uploader("Trascina qui i tuoi file geometrici .dxf", type=["dxf"], accept_multiple_files=True, key="dxf_net_2d")
         
@@ -437,25 +480,11 @@ with tab_2d:
         tabella_pezzi_2d = st.data_editor(st.session_state.pezzi_2d, num_rows="fixed", key="edit_pezzi_2d", use_container_width=True)
         st.session_state.pezzi_2d = tabella_pezzi_2d
         
+        # IL PULSANTE DI ESECUZIONE FA SOLO UNA SIMULAZIONE
         if st.button(T["esegui"], type="primary", key="run_2d"):
             totale_pezzi_richiesti = int(tabella_pezzi_2d["QTY DA PRODURRE"].sum()) if not tabella_pezzi_2d.empty else 16
             
-            # Scalo automatico di una lastra congruente dall'inventario lamiere
-            stk_temp = []
-            lastra_scalata = False
-            for _, r in tabella_stk_2d.iterrows():
-                w_s = int(r["LARGHEZZA X (mm)"])
-                h_s = int(r["ALTEZZA Y (mm)"])
-                th_s = float(r["SPESSORE (mm)"])
-                q_s = int(r["QTY"])
-                
-                if w_s == W_lamiera and h_s == H_lamiera and th_s == spessore_lastra and q_s > 0 and not lastra_scalata:
-                    q_s -= 1
-                    lastra_scalata = True
-                stk_temp.append({"LARGHEZZA X (mm)": w_s, "ALTEZZA Y (mm)": h_s, "SPESSORE (mm)": th_s, "QTY": q_s})
-            st.session_state.magazzino_2d = pd.DataFrame(stk_temp)
-            
-            # Algoritmo Nesting ad Incastro Geometrico Reale Specchiato
+            # Algoritmo Nesting ad Incastro Geometrico Reale Specchiato (Simulazione visiva)
             poligoni_reali = []
             w_pezzo = 750
             h_pezzo = 220
@@ -491,13 +520,52 @@ with tab_2d:
             st.session_state.results_2d = {
                 "piazzamenti": poligoni_reali,
                 "scarto_mq": area_scarto_mq,
-                "saturazione": f"{round((area_taglio_mq/area_totale_mq)*100, 1)}%"
+                "saturazione": f"{round((area_taglio_mq/area_totale_mq)*100, 1)}%",
+                "dimension_lastra_usata": {"W": W_lamiera, "H": H_lamiera, "THK": spessore_lastra}
             }
+            st.session_state["2d_confermato"] = False # Nuova simulazione pronta per la conferma
             st.rerun()
 
     with col2_right:
         if st.session_state.results_2d:
             res2d = st.session_state.results_2d
+            
+            # Controllo conferma per il 2D
+            if not st.session_state["2d_confermato"]:
+                st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto per salvare.")
+                
+                if st.button(T["conferma_stock"], key="btn_conf_2d", type="secondary"):
+                    # Scalo effettivo dal magazzino lamiere reale
+                    stk_temp = []
+                    lastra_scalata = False
+                    p_info = res2d["dimension_lastra_usata"]
+                    
+                    for _, r in st.session_state.magazzino_2d.iterrows():
+                        w_s = int(r["LARGHEZZA X (mm)"])
+                        h_s = int(r["ALTEZZA Y (mm)"])
+                        th_s = float(r["SPESSORE (mm)"])
+                        q_s = int(r["QTY"])
+                        
+                        if w_s == p_info["W"] and h_s == p_info["H"] and th_s == p_info["THK"] and q_s > 0 and not lastra_scalata:
+                            q_s -= 1
+                            lastra_scalata = True
+                        stk_temp.append({"LARGHEZZA X (mm)": w_s, "ALTEZZA Y (mm)": h_s, "SPESSORE (mm)": th_s, "QTY": q_s})
+                    
+                    # Se lo scarto supera l'area minima inseriamo il resto riutilizzabile in inventario
+                    if res2d['scarto_mq'] >= area_min_2d:
+                        stk_temp.append({
+                            "LARGHEZZA X (mm)": int(p_info["W"]), 
+                            "ALTEZZA Y (mm)": int(p_info["H"] * 0.35), 
+                            "SPESSORE (mm)": p_info["THK"], 
+                            "QTY": 1
+                        })
+                        
+                    st.session_state.magazzino_2d = pd.DataFrame(stk_temp)
+                    st.session_state["2d_confermato"] = True
+                    st.rerun()
+            else:
+                st.success(T["stock_applicato"])
+            
             st.markdown(f"<h2>📐 Piano di Taglio Ottimizzato 2D — Rendimento: {res2d['saturazione']}</h2>", unsafe_allow_html=True)
             
             fig, ax = plt.subplots(figsize=(12, 6))
@@ -516,16 +584,7 @@ with tab_2d:
             ax.set_aspect('equal')
             st.pyplot(fig)
             
-            st.metric(label="Superficie Residua Riutilizzabile", value=f"{res2d['scarto_mq']} m²")
-            
-            if res2d['scarto_mq'] >= area_min_2d:
-                if st.button(T["salva_scarto"], key="save_sc_2d"):
-                    st.session_state.magazzino_2d = pd.concat([
-                        st.session_state.magazzino_2d, 
-                        pd.DataFrame([{"LARGHEZZA X (mm)": int(W_lamiera), "ALTEZZA Y (mm)": int(H_lamiera * 0.35), "SPESSORE (mm)": spessore_lastra, "QTY": 1}])
-                    ], ignore_index=True)
-                    st.success("Scarto riutilizzabile registrato in inventario!")
-                    st.rerun()
+            st.metric(label="Superficie Residua Riutilizzabile Stimata", value=f"{res2d['scarto_mq']} m²")
             
             # Generazione codice DXF Vettoriale CNC 1:1
             dxf_string = "0\nSECTION\n2\nENTITIES\n"
