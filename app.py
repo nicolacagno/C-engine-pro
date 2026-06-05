@@ -5,6 +5,12 @@ import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 
+# Import per la generazione sicura del PDF
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+
 # =============================================================================
 # STATO DELLA SESSIONE (Persistenza magazzino e risultati temporanei)
 # =============================================================================
@@ -54,21 +60,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# EXPORT MANAGERS SICURI (NATIVI E CERTIFICATI CON EXCEL INTERNO)
+# EXPORT MANAGERS SICURI E CERTIFICATI
 # =============================================================================
 def make_pure_csv(df):
-    # 'utf-8-sig' inserisce il BOM corretto così Excel riconosce all'istante la formattazione e i caratteri
     return df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
 
 def make_real_excel(df):
-    # Genera un file Excel .xlsx REALE e nativo al 100% senza passare da finti formati testo tabulati
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Nesting_Report')
     return output.getvalue()
 
 def make_text_report(title, summary, items_list):
-    # Genera un Report di Officina Professionale (.txt), leggibile al 100% ovunque senza corruzioni binari
     out = f"==================================================\n"
     out += f"       {title}\n"
     out += f"==================================================\n\n"
@@ -83,8 +86,63 @@ def make_text_report(title, summary, items_list):
     out += f"\n==================================================\n"
     return out.encode('utf-8')
 
+def make_real_pdf(title, summary, df):
+    """Genera un file PDF reale, conforme e non corrotto utilizzando ReportLab"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], textColor=colors.HexColor('#FF5722'), spaceAfter=15)
+    section_style = ParagraphStyle('SectionStyle', parent=styles['Heading3'], spaceBefore=10, spaceAfter=10)
+    normal_style = styles['Normal']
+    
+    # Intestazione del Report
+    story.append(Paragraph(title, title_style))
+    story.append(Spacer(1, 10))
+    
+    # Sezione Riepilogo Commessa
+    story.append(Paragraph("<b>RIEPILOGO PARAMETRI COMMESSA:</b>", section_style))
+    for k, v in summary.items():
+        story.append(Paragraph(f"• <b>{k}:</b> {v}", normal_style))
+    story.append(Spacer(1, 15))
+    
+    # Sezione Tabella Dati di Produzione
+    story.append(Paragraph("<b>DETTAGLIO PRODUZIONE:</b>", section_style))
+    
+    # Conversione del DataFrame in dati strutturati per ReportLab
+    table_data = [df.columns.values.tolist()] + df.values.tolist()
+    
+    # Formattazione e wrapping del testo nelle celle della tabella per evitare overflow esterni
+    formatted_table_data = []
+    for row_idx, row in enumerate(table_data):
+        formatted_row = []
+        for cell in row:
+            if row_idx == 0:
+                formatted_row.append(Paragraph(f"<b>{str(cell)}</b>", normal_style))
+            else:
+                formatted_row.append(Paragraph(str(cell), normal_style))
+        formatted_table_data.append(formatted_row)
+        
+    prod_table = Table(formatted_table_data, hAlign='LEFT')
+    prod_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#262626')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+    ]))
+    
+    story.append(prod_table)
+    doc.build(story)
+    
+    return buffer.getvalue()
+
 # =============================================================================
-# DIZIONARIO DI TRADUZIONE ESTESO (IT, EN, DE, FR, ES, RO, PT, HU, PL)
+# DIZIONARIO DI TRADUZIONE ESTESO
 # =============================================================================
 lang = st.sidebar.selectbox("🌐 LINGUA / LANGUAGE / SPRACHE / LANGUE / IDIOMA / LIMBĂ / LÍNGUA / NYELV / JĘZYK", 
                             ["IT", "EN", "DE", "FR", "ES", "RO", "PT", "HU", "PL"])
@@ -139,146 +197,13 @@ TXT = {
         "area_min_2d": "MINIMUM REUSABLE AREA (m²)",
         "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts, set the required quantities and execute nesting."
     },
-    "DE": {
-        "title": "Geometrisches Verschachteln & Optimierung",
-        "header_1d": "🪚 1D VERSCHACHTELUNG - STANGEN",
-        "header_2d": "📐 2D VERSCHACHTELUNG - BLECHE",
-        "commessa": "📋 AUFTRAGSDETAILS",
-        "ordine": "BESTELLNUMMER",
-        "cliente": "KUNDENAME",
-        "parametri_macchina": "🔧 MASCHINENPARAMETER",
-        "magazzino": "📦 LAGERBESTAND (ÄNDERUNG NUR NACH BESTÄTIGUNG)",
-        "tagli": "✂️ SCHNITTLISTE",
-        "esegui": "🚀 VERSCHACHTELUNG SIMULIEREN & PRÜFEN",
-        "conferma_stock": "✅ BESTÄTIGEN & VOM REALEN LAGER ABZIEHEN",
-        "stock_applicato": "💥 Lager erfolgreich aktualisiert! Material abgebucht.",
-        "spessore": "BLECHDICKE (mm)",
-        "bordo": "RANDABSTAND (mm)",
-        "esporta": "💾 PRODUKTIONSDATEN EXPORTIEREN",
-        "scarto_min_1d": "MINDESTLÄNGE WIEDERVERWENDUNG (mm)",
-        "area_min_2d": "MINDESTFLÄCHE RESTE (m²)",
-        "standby_2d": "WARTEN ON DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung."
-    },
-    "FR": {
-        "title": "Imbrication Géométrique & Optimisation",
-        "header_1d": "🪚 IBRICATION 1D - BARRES",
-        "header_2d": "📐 IBRICATION 2D - TÔLES",
-        "commessa": "📋 DÉTAILS DU COMMANDE",
-        "ordine": "NUMÉRO DE COMMANDE",
-        "cliente": "NOM DU CLIENT",
-        "parametri_macchina": "🔧 PARAMÈTRES MACHINE",
-        "magazzino": "📦 INVENTAIRE STOCK (MODIFIÉ UNIQUEMENT APRÈS CONFIRMATION)",
-        "tagli": "✂️ LISTE DE COUPE",
-        "esegui": "🚀 CALCULER & REVOIR L'IMBRICATION (SIMULATION)",
-        "conferma_stock": "✅ CONFIRMER ET MISE À JOUR DU STOCK RÉEL",
-        "stock_applicato": "💥 Inventaire mis à jour avec succès! Matériel déduit.",
-        "spessore": "ÉPAISSEUR TÔLE (mm)",
-        "bordo": "MARGE PÉRIMÉTRIQUE (mm)",
-        "esporta": "💾 EXPORTER LES DONNÉES DE PRODUCTION",
-        "scarto_min_1d": "CHUTE MINIMUM RÉCUPÉRABLE (mm)",
-        "area_min_2d": "SURFACE MINIMUM RÉCUPÉRABLE (m²)",
-        "standby_2d": "EN ATTENTE DE FICHIERS DXF\n\nChargez les fichiers géométriques .dxf, définissez les quantités par pièce lamiere et lancez l'imbrication."
-    },
-    "ES": {
-        "title": "Nesting Geométrico y Optimización",
-        "header_1d": "🪚 NESTING 1D - BARRAS",
-        "header_2d": "📐 NESTING 2D - CHAPAS",
-        "commessa": "📋 DATOS DE LA ORDEN",
-        "ordine": "NÚMERO DE ORDEN",
-        "cliente": "NOMBRE DEL CLIENTE",
-        "parametri_macchina": "🔧 PARÁMETROS DE LA MÁQUINA",
-        "magazzino": "📦 INVENTARIO STOCK (MODIFICADO SOLO TRAS CONFIRMACIÓN)",
-        "tagli": "✂️ LISTA DE CORTES",
-        "esegui": "🚀 CALCULAR Y REVISAR NESTING (SIMULACIÓN)",
-        "conferma_stock": "✅ CONFIRMAR Y DESCONTARE DEL STOCK REAL",
-        "stock_applicato": "💥 ¡Inventario actualizado con éxito! Material descontado.",
-        "spessore": "ESPESOR DE CHAPA (mm)",
-        "bordo": "MARGEN PERIMETRAL (mm)",
-        "esporta": "💾 EXPORTAR DATOS DE PRODUCCIÓN",
-        "scarto_min_1d": "LONGITUD MÍNIMA REUTILIZABLE (mm)",
-        "area_min_2d": "ÁREA MÍNIMA REUTILIZABLE (m²)",
-        "standby_2d": "ESPERANDO ARCHIVOS DXF\n\nCargue los archivos .dxf de las piezas, defina las cantidades requeridas y ejecute el nesting."
-    },
-    "RO": {
-        "title": "Nesting Geometric și Optimizare",
-        "header_1d": "🪚 NESTING 1D - BARE",
-        "header_2d": "📐 NESTING 2D - TABLE",
-        "commessa": "📋 DETALII COMANDĂ",
-        "ordine": "NUMĂR COMANDĂ",
-        "cliente": "NUME CLIENT",
-        "parametri_macchina": "🔧 PARAMETRII UTILAJULUI",
-        "magazzino": "📦 STOC DISPONIBIL (ACTUALIZAT DOAR DUPĂ CONFIRMARE)",
-        "tagli": "✂️ LISTĂ DE TĂIERE",
-        "esegui": "🚀 CALCULEAZĂ ȘI VERIFICĂ NESTING-UL (SIMULARE)",
-        "conferma_stock": "✅ CONFIRMĂ ȘI SCADE DIN STOCUL REAL",
-        "stock_applicato": "💥 Stocul a fost actualizat cu succes! Materialul a fost scăzut.",
-        "spessore": "GROSIME FOAIE (mm)",
-        "bordo": "MARGINE PERIMETRALĂ (mm)",
-        "esporta": "💾 EXPORTĂ DATELE DE PRODUCȚIE",
-        "scarto_min_1d": "LUNGIME MINIMĂ REUTILIZABILĂ (mm)",
-        "area_min_2d": "SUPRAFAȚĂ MINIMĂ REUTILIZABILĂ (m²)",
-        "standby_2d": "ÎN AȘTEPTAREA FIȘIERELOR DXF\n\nÎncărcați fișierele geometrice .dxf, setați cantitățile necesare pentru fiecare piesă și porniți optimizarea."
-    },
-    "PT": {
-        "title": "Nesting Geométrico e Otimização",
-        "header_1d": "🪚 NESTING 1D - BARRAS",
-        "header_2d": "📐 NESTING 2D - CHAPAIS",
-        "commessa": "📋 DETALHES DA ORDEM",
-        "ordine": "NÚMERO DA ORDEM",
-        "cliente": "NOME DO CLIENTE",
-        "parametri_macchina": "🔧 PARÂMETROS DA MÁQUINA",
-        "magazzino": "📦 ESTOQUE (ATUALIZADO APENAS APÓS CONFIRMAÇÃO)",
-        "tagli": "✂️ LISTA DE CORTES",
-        "esegui": "🚀 CALCULAR E REVISAR NESTING (SIMULAÇÃO)",
-        "conferma_stock": "✅ CONFIRMAR E ATUALIZAR ESTOQUE REAL",
-        "stock_applicato": "💥 Estoque atualizado com sucesso! Material baixado.",
-        "spessore": "ESPESSURA DA CHAPA (mm)",
-        "bordo": "MARGEM PERIMETRAL (mm)",
-        "esporta": "💾 EXPORTAR DADOS DE PRODUÇÃO",
-        "scarto_min_1d": "COMPRIMENTO MÍNIMO REUTILIZÁVEL (mm)",
-        "area_min_2d": "ÁREA MÍNIMA REUTILIZÁVEL (m²)",
-        "standby_2d": "AGUARDANDO ARQUIVOS DXF\n\nCarregue os arquivos .dxf das peças, defina as quantidades necessárias e execute o nesting."
-    },
-    "HU": {
-        "title": "Geometriai fésülés és optimalizálás",
-        "header_1d": "🪚 1D FÉSÜLÉS - RUDAK",
-        "header_2d": "📐 2D FÉSÜLÉS - LEMEZEK",
-        "commessa": "📋 MEGRENDELÉS RÉSZLETEI",
-        "ordine": "RENDELÉSSZÁM",
-        "cliente": "ÜGYFÉL NEVE",
-        "parametri_macchina": "🔧 GÉPI PARAMÉTEREK",
-        "magazzino": "📦 RAKTÁRKÉSZLET (CSAK JÓVÁHAGYÁS UTÁN VÁLTOZIK)",
-        "tagli": "✂️ VÁGÁSI LISTA",
-        "esegui": "🚀 FÉSÜLÉS TERVEZÉSE ÉS ELLENŐRZÉSE (SZIMULÁCIÓ)",
-        "conferma_stock": "✅ JÓVÁHAGYÁS ÉS LEVONÁS A VALÓDI KÉSZLETBŐL",
-        "stock_applicato": "💥 A raktárkészlet sikeresen frissítve! Anyag levonva.",
-        "spessore": "LEMEZVASTAGSÁG (mm)",
-        "bordo": "PEREMEZÉSI MARGÓ (mm)",
-        "esporta": "💾 TERMELÉSI ADATOK EXPORTÁLÁSA",
-        "scarto_min_1d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ HOSSZ (mm)",
-        "area_min_2d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ TERÜLET (m²)",
-        "standby_2d": "DXF FÁJLOKRA VÁR\n\nTöltse fel a .dxf geometriai fájlokat, adja meg a darabszámokat, és indítsa el a fésülést."
-    },
-    "PL": {
-        "title": "Nesting Geometryczny i Optymalizacja",
-        "header_1d": "🪚 NESTING 1D - PRĘTY / PROFILE",
-        "header_2d": "📐 NESTING 2D - BLACHY",
-        "commessa": "📋 SZCZEGÓŁY ZLECENIA",
-        "ordine": "NUMER ZLECENIA",
-        "cliente": "NAZWA KLIENTA",
-        "parametri_macchina": "🔧 PARAMETRY MASZYNY",
-        "magazzino": "📦 STAN MAGAZYNOWY (ZMIANA TYLKO PO POTWIERDZENIU)",
-        "tagli": "✂️ LISTA CIĘĆ",
-        "esegui": "🚀 OBLICZ I SPRAWDŹ NESTING (SYMULACJA)",
-        "conferma_stock": "✅ POTWIERDŹ I ODLICZ Z REALNEGO MAGAZYNU",
-        "stock_applicato": "💥 Magazyn zaktualizowany pomyślnie! Materiał został odliczony.",
-        "spessore": "GRUBOŚĆ BLACHY (mm)",
-        "bordo": "MARGINES OBWODOWY (mm)",
-        "esporta": "💾 EKSPORTUJ DANE PRODUKCYJNE",
-        "scarto_min_1d": "MINIMALNA DŁUGOŚĆ ODPADU UŻYTECZNEGO (mm)",
-        "area_min_2d": "MINIMALNA POWIERZCHNIA ODPADU UŻYTECZNEGO (m²)",
-        "standby_2d": "OCZEKIWANIE NA PLIKI DXF\n\nZaładuj pliki geometryczne .dxf, ustaw ilości dla każdego elementu i uruchom optymalizację."
-    }
+    "DE": { "title": "Geometrisches Verschachteln & Optimierung", "header_1d": "🪚 1D VERSCHACHTELUNG - STANGEN", "header_2d": "📐 2D VERSCHACHTELUNG - BLECHE", "commessa": "📋 AUFTRAGSDETAILS", "ordine": "BESTELLNUMMER", "cliente": "KUNDENAME", "parametri_macchina": "🔧 MASCHINENPARAMETER", "magazzino": "📦 LAGERBESTAND (ÄNDERUNG NUR NACH BESTÄTIGUNG)", "tagli": "✂️ SCHNITTLISTE", "esegui": "🚀 VERSCHACHTELUNG SIMULIEREN & PRÜFEN", "conferma_stock": "✅ BESTÄTIGEN & VOM REALEN LAGER ABZIEHEN", "stock_applicato": "💥 Lager erfolgreich aktualisiert! Material abgebucht.", "spessore": "BLECHDICKE (mm)", "bordo": "RANDABSTAND (mm)", "esporta": "💾 PRODUKTIONSDATEN EXPORTIEREN", "scarto_min_1d": "MINDESTLÄNGE WIEDERVERWENDUNG (mm)", "area_min_2d": "MINDESTFLÄCHE RESTE (m²)", "standby_2d": "WARTEN ON DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung." },
+    "FR": { "title": "Imbrication Géométrique & Optimisation", "header_1d": "🪚 IBRICATION 1D - BARRES", "header_2d": "📐 IBRICATION 2D - TÔLES", "commessa": "📋 DÉTAILS DU COMMANDE", "ordine": "NUMÉRO DE COMMANDE", "cliente": "NOM DU CLIENT", "parametri_macchina": "🔧 PARAMÈTRES MACHINE", "magazzino": "📦 INVENTAIRE STOCK (MODIFIÉ UNIQUEMENT APRÈS CONFIRMATION)", "tagli": "✂️ LISTE DE COUPE", "esegui": "🚀 CALCULER & REVOIR L'IMBRICATION (SIMULATION)", "conferma_stock": "✅ CONFIRMER ET MISE À PACE DU STOCK RÉEL", "stock_applicato": "💥 Inventaire mis à jour avec succès! Matériel déduit.", "spessore": "ÉPAISSEUR TÔLE (mm)", "bordo": "MARGE PÉRIMÉTRIQUE (mm)", "esporta": "💾 EXPORTER LES DONNÉES DE PRODUCTION", "scarto_min_1d": "CHUTE MINIMUM RÉCUPÉRABLE (mm)", "area_min_2d": "SURFACE MINIMUM RÉCUPÉRABLE (m²)", "standby_2d": "EN ATTENTE DE FICHIERS DXF\n\nChargez les fichiers géométriques .dxf, définissez les quantités par pièce lamiere et lancez l'imbrication." },
+    "ES": { "title": "Nesting Geométrico y Optimización", "header_1d": "🪚 NESTING 1D - BARRAS", "header_2d": "📐 NESTING 2D - CHAPAS", "commessa": "📋 DATOS DE LA ORDEN", "ordine": "NÚMERO DE ORDEN", "cliente": "NOMBRE DEL CLIENTE", "parametri_macchina": "🔧 PARÁMETROS DE LA MÁQUINA", "magazzino": "📦 INVENTARIO STOCK (MODIFICADO SOLO TRAS CONFIRMACIÓN)", "tagli": "✂️ LISTA DE CORTES", "esegui": "🚀 CALCULAR Y REVISAR NESTING (SIMULACIÓN)", "conferma_stock": "✅ CONFIRMAR Y DESCONTARE DEL STOCK REAL", "stock_applicato": "💥 ¡Inventario actualizado con éxito! Material descontado.", "spessore": "ESPESOR DE CHAPA (mm)", "bordo": "MARGEN PERIMETRAL (mm)", "esporta": "💾 EXPORTAR DATOS DE PRODUCCIÓN", "scarto_min_1d": "LONGITUD MÍNIMA REUTILIZABLE (mm)", "area_min_2d": "ÁREA MÍNIMA REUTILIZABLE (m²)", "standby_2d": "ESPERANDO ARCHIVOS DXF\n\nCargue los archivos .dxf de las piezas, defina las cantidades requeridas y ejecute el nesting." },
+    "RO": { "title": "Nesting Geometric și Optimizare", "header_1d": "🪚 NESTING 1D - BARE", "header_2d": "📐 NESTING 2D - TABLE", "commessa": "📋 DETALII COMANDĂ", "ordine": "NUMĂR COMANDĂ", "cliente": "NUME CLIENT", "parametri_macchina": "🔧 PARAMETRII UTILAJULUI", "magazzino": "📦 STOC DISPONIBIL (ACTUALIZAT DOAR DUPĂ CONFIRMARE)", "tagli": "✂️ LISTĂ DE TĂIERE", "esegui": "🚀 CALCULEAZĂ ȘI VERIFICĂ NESTING-UL (SIMULARE)", "conferma_stock": "✅ CONFIRMĂ ȘI SCADE DIN STOCUL REAL", "stock_applicato": "💥 Stocul a fost actualizat cu succes! Materialul a fost scăzut.", "spessore": "GROSIME FOAIE (mm)", "bordo": "MARGINE PERIMETRALĂ (mm)", "esporta": "💾 EXPORTĂ DATELE DE PRODUCȚIE", "scarto_min_1d": "LUNGIME MINIMĂ REUTILIZABILĂ (mm)", "area_min_2d": "SUPRAFAȚĂ MINIMĂ REUTILIZABILĂ (m²)", "standby_2d": "ÎN AȘTEPTAREA FIȘIERELOR DXF\n\nÎncărcați fișierele geometrice .dxf, setați cantitățile necesare pentru fiecare piesă și porniți optimizarea." },
+    "PT": { "title": "Nesting Geométrico e Otimização", "header_1d": "🪚 NESTING 1D - BARRAS", "header_2d": "📐 NESTING 2D - CHAPAIS", "commessa": "📋 DETALHES DA ORDEM", "ordine": "NÚMERO DA ORDEM", "cliente": "NOME DO CLIENTE", "parametri_macchina": "🔧 PARÂMETROS DA MÁQUINA", "magazzino": "📦 ESTOQUE (ATUALIZADO APENAS APÓS CONFIRMAÇÃO)", "tagli": "✂️ LISTA DE CORTES", "esegui": "🚀 CALCULAR E REVISAR NESTING (SIMULAÇÃO)", "conferma_stock": "✅ CONFIRMAR E ATUALIZAR ESTOQUE REAL", "stock_applicato": "💥 Estoque atualizado com sucesso! Material baixado.", "spessore": "ESPESSURA DA CHAPA (mm)", "bordo": "MARGEM PERIMETRAL (mm)", "esporta": "💾 EXPORTAR DADOS DE PRODUÇÃO", "scarto_min_1d": "COMPRIMENTO MÍNIMO REUTILIZÁVEL (mm)", "area_min_2d": "ÁREA MÍNIMA REUTILIZÁVEL (m²)", "standby_2d": "AGUARDANDO ARQUIVOS DXF\n\nCarregue os arquivos .dxf das peças, defina as quantidades necessárias e execute o nesting." },
+    "HU": { "title": "Geometriai fésülés és optimalizálás", "header_1d": "🪚 1D FÉSÜLÉS - RUDAK", "header_2d": "📐 2D FÉSÜLÉS - LEMEZEK", "commessa": "📋 MEGRENDELÉS RÉSZLETEI", "ordine": "RENDELÉSSZÁM", "cliente": "ÜGYFÉL NEVE", "parametri_macchina": "🔧 GÉPI PARAMÉTEREK", "magazzino": "📦 RAKTÁRKÉSZLET (CSAK JÓVÁHAGYÁS UTÁN VÁLTOZIK)", "tagli": "✂️ VÁGÁSI LISTA", "esegui": "🚀 FÉSÜLÉS TERVEZÉSE ÉS ELLENŐRZÉSE (SZIMULÁCIÓ)", "conferma_stock": "✅ JÓVÁHAGYÁS ÉS LEVONÁS A VALÓDI KÉSZLETBŐL", "stock_applicato": "💥 A raktárkészlet sikeresen frissítve! Anyag levonva.", "spessore": "LEMEZVASTAGSÁG (mm)", "bordo": "PEREMEZÉSI MARGÓ (mm)", "esporta": "💾 TERMELÉSI ADATOK EXPORTÁLÁSA", "scarto_min_1d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ HOSSZ (mm)", "area_min_2d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ TERÜLET (m²)", "standby_2d": "DXF FÁJLOKRA VÁR\n\nTöltse fel a .dxf geometriai fájlokat, adja meg a darabszámokat, ... e indítsa el a fésülést." },
+    "PL": { "title": "Nesting Geometryczny i Optymalizacja", "header_1d": "🪚 NESTING 1D - PRĘTY / PROFILE", "header_2d": "📐 NESTING 2D - BLACHY", "commessa": "📋 SZCZEGÓŁY ZLECENIA", "ordine": "NUMER ZLECENIA", "cliente": "NAZWA KLIENTA", "parametri_macchina": "🔧 PARAMETRY MASZYNY", "magazzino": "📦 STAN MAGAZYNOWY (ZMIANA TYLKO PO POTWIERDZENIU)", "tagli": "✂️ LISTA CIĘĆ", "esegui": "🚀 OBLICZ I SPRAWDŹ NESTING (SYMULACJA)", "conferma_stock": "✅ POTWIERDŹ I ODLICZ Z REALNEGO MAGAZYNU", "stock_applicato": "💥 Magazyn zaktualizowany pomyślnie! Materiał został odliczony.", "spessore": "GRUBOŚĆ BLACHY (mm)", "bordo": "MARGINES OBWODOWY (mm)", "esporta": "💾 EKSPORTUJ DANE PRODUKCYJNE", "scarto_min_1d": "MINIMALNA DŁUGOŚĆ ODPADU UŻYTECZNEGO (mm)", "area_min_2d": "MINIMALNA POWIERZCHNIA ODPADU UŻYTECZNEGO (m²)", "standby_2d": "OCZEKIWANIE NA PLIKI DXF\n\nZaładuj pliki geometryczne .dxf, ustaw ilości dla każdego elementu i uruchom optymalizację." }
 }
 T = TXT[lang]
 HEX_COLORI = {"1200": "#3B82F6", "850": "#10B981", "340": "#8B5CF6", "default": "#4B5563"}
@@ -334,7 +259,7 @@ with tab_1d:
             
             for pezzo in reqs:
                 inserito = False
-                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
+                for b in piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -374,7 +299,7 @@ with tab_1d:
             res = st.session_state.results_1d
             
             if not st.session_state["1d_confermato"]:
-                st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto per salvare.")
+                st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto para salvare.")
                 
                 if st.button(T["conferma_stock"], key="btn_conf_1d", type="secondary"):
                     stk_reale = {}
@@ -419,12 +344,13 @@ with tab_1d:
                 for i, b in enumerate(res["piani"])
             ])
             
-            c1, c2, c3 = st.columns(3)
-            c1.download_button("📥 DOWNLOAD 1D CSV", make_pure_csv(df_exp), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
-            c2.download_button("📊 DOWNLOAD 1D EXCEL (.XLSX)", make_real_excel(df_exp), f"Nesting_1D_{num_ordine_1d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            c1, c2, c3, c4 = st.columns(4)
+            c1.download_button("📥 DOWNLOAD CSV", make_pure_csv(df_exp), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
+            c2.download_button("📊 DOWNLOAD EXCEL (.XLSX)", make_real_excel(df_exp), f"Nesting_1D_{num_ordine_1d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
             summary_1d = {"N_Ordine": num_ordine_1d, "Cliente": nome_cliente_1d, "Barre_Lavorate": len(res["piani"])}
-            c3.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.txt", "text/plain")
+            c3.download_button("📄 SCARICA PDF SQUADRA", make_real_pdf("REPORT NESTING 1D - BARRE", summary_1d, df_exp), f"Nesting_1D_{num_ordine_1d}.pdf", "application/pdf")
+            c4.download_button("📋 SCARICA REPORT (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.txt", "text/plain")
 
 # =============================================================================
 # SEZIONE 2D - LAMIERE
@@ -518,7 +444,7 @@ with tab_2d:
             res2d = st.session_state.results_2d
             
             if not st.session_state["2d_confermato"]:
-                st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto per salvare.")
+                st.warning("⚠️ QUESTA È UNA SIMULAZIONE: Il magazzino non è stato modificato. Clicca sul tasto di conferma sotto para salvare.")
                 
                 if st.button(T["conferma_stock"], key="btn_conf_2d", type="secondary"):
                     stk_temp = []
@@ -585,12 +511,13 @@ with tab_2d:
             st.markdown(f"### {T['esporta']}")
             df_exp_2d = pd.DataFrame([{"ID_Ordine": num_ordine_2d, "Cliente": nome_cliente_2d, "Spessore_Lamiera_mm": spessore_lastra, "Totale_Pezzi_Nesting": len(res2d['piazzamenti']), "Rendimento_Efficienza": res2d['saturazione'], "Scarto_Residuo_m2": res2d['scarto_mq']}])
             
-            bx1, bx2, bx3, bx4 = st.columns(4)
-            bx1.download_button("📥 DOWNLOAD 2D CSV", make_pure_csv(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.csv", "text/csv")
-            bx2.download_button("📊 DOWNLOAD 2D EXCEL (.XLSX)", make_real_excel(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            bx3.download_button("🛠️ SCARICA DXF MASTRÒ CNC (1:1)", dxf_string, file_name=f"CNC_Layout_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
+            bx1, bx2, bx3, bx4, bx5 = st.columns(5)
+            bx1.download_button("📥 DOWNLOAD CSV", make_pure_csv(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.csv", "text/csv")
+            bx2.download_button("📊 DOWNLOAD EXCEL (.XLSX)", make_real_excel(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            bx3.download_button("🛠️ SCARICA DXF 1:1", dxf_string, file_name=f"CNC_Layout_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
             
             summary_2d = {"N_Ordine": num_ordine_2d, "Spessore_mm": spessore_lastra, "Pezzi_Prodotti": len(res2d['piazzamenti']), "Rendimento": res2d['saturazione']}
-            bx4.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 2D", summary_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.txt", "text/plain")
+            bx4.download_button("📄 SCARICA PDF SQUADRA", make_real_pdf("REPORT NESTING 2D - LAMIERE", summary_2d, df_exp_2d), f"Nesting_2D_{num_ordine_2d}.pdf", "application/pdf")
+            bx5.download_button("📋 SCARICA REPORT (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 2D", summary_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.txt", "text/plain")
         else:
             st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
