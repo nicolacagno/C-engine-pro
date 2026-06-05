@@ -66,25 +66,76 @@ st.markdown("""
 # PARSER GEOMETRICO REALE DXF VIA EZDXF
 # =============================================================================
 def parse_uploaded_dxf(file_bytes):
-    """Legge un file DXF caricato in memoria ed estrae le geometrie reali e il Bounding Box"""
+    """Parser geometrico avanzato industriale: supporta Linee, Cerchi, Polilinee, 
+    Spline e l'esplosione automatica di Blocchi/Inserti."""
     try:
-        stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
-        doc = ezdxf.read(stream)
+        # Tenta la lettura supportando sia file ASCII testuali che file Binari
+        try:
+            stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
+            doc = ezdxf.read(stream)
+        except Exception:
+            doc = ezdxf.read_bytes(file_bytes)
+            
         msp = doc.modelspace()
-        
         geometrie = {"linee": [], "cerchi": [], "polilinee": []}
         
-        for e in msp.query('LINE'):
-            geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
-            
-        for e in msp.query('CIRCLE'):
-            geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
-            
-        for e in msp.query('LWPOLYLINE POLYLINE'):
-            punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
-            if punti:
-                geometrie["polilinee"].append(punti)
+        # ----------------=====================================================
+        # GESTIONE BLOCCHI (INSERT): Esplode i blocchi per leggere le geometrie interne
+        # ----------------=====================================================
+        def estrai_entita(spazio_geometrico):
+            for e in spazio_geometrico.query('LINE'):
+                geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
                 
+            for e in msp.query('ARC'):
+                # Approssima l'arco come una polilinea di piccoli segmenti
+                try:
+                    punti_arco = [(pt.x, pt.y) for pt in e.flattening(distance=0.5)]
+                    if punti_arco:
+                        geometrie["polilinee"].append(punti_arco)
+                except:
+                    pass
+
+            for e in spazio_geometrico.query('CIRCLE'):
+                geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
+                
+            for e in spazio_geometrico.query('LWPOLYLINE POLYLINE'):
+                punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
+                if punti:
+                    geometrie["polilinee"].append(punti)
+                    
+            for e in spazio_geometrico.query('SPLINE ELLIPSE'):
+                # Trasforma curve e spline in segmenti lineari per il nesting grafico
+                try:
+                    punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.5)]
+                    if punti_curva:
+                        geometrie["polilinee"].append(punti_curva)
+                except:
+                    pass
+
+        # Applica l'estrazione sullo spazio modello principale
+        estrai_entita(msp)
+        
+        # Cerca i blocchi inseriti e analizza il loro contenuto nativo traslandolo
+        for insert in msp.query('INSERT'):
+            try:
+                # Esplode virtualmente l'entità per estrarre la geometria reale scalata/ruotata
+                for e in insert.virtual_entities():
+                    if e.dxftype() == 'LINE':
+                        geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
+                    elif e.dxftype() == 'CIRCLE':
+                        geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
+                    elif e.dxftype() in ('LWPOLYLINE', 'POLYLINE'):
+                        punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
+                        if punti: geometrie["polilinee"].append(punti)
+                    elif e.dxftype() in ('SPLINE', 'ELLIPSE', 'ARC'):
+                        punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.5)]
+                        if punti_curva: geometrie["polilinee"].append(punti_curva)
+            except:
+                pass
+
+        # ----------------=====================================================
+        # CALCOLO DEL BOUNDING BOX (Ingombro massimo reale)
+        # ----------------=====================================================
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
@@ -108,7 +159,6 @@ def parse_uploaded_dxf(file_bytes):
     except Exception as e:
         pass
     return None, None, None
-
 # =============================================================================
 # EXPORT MANAGERS SICURI E CERTIFICATI
 # =============================================================================
