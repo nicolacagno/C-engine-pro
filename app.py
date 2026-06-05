@@ -4,10 +4,6 @@ import numpy as np
 import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
 
 # =============================================================================
 # STATO DELLA SESSIONE (Persistenza magazzino e risultati temporanei)
@@ -58,18 +54,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# EXPORT MANAGERS SICURI (NATIVI E CERTIFICATI)
+# EXPORT MANAGERS SICURI (NATIVI E CERTIFICATI CON EXCEL INTERNO)
 # =============================================================================
 def make_pure_csv(df):
+    # 'utf-8-sig' inserisce il BOM corretto così Excel riconosce all'istante la formattazione e i caratteri
     return df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
 
 def make_real_excel(df):
+    # Genera un file Excel .xlsx REALE e nativo al 100% senza passare da finti formati testo tabulati
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Nesting_Report')
     return output.getvalue()
 
 def make_text_report(title, summary, items_list):
+    # Genera un Report di Officina Professionale (.txt), leggibile al 100% ovunque senza corruzioni binari
     out = f"==================================================\n"
     out += f"       {title}\n"
     out += f"==================================================\n\n"
@@ -84,47 +83,11 @@ def make_text_report(title, summary, items_list):
     out += f"\n==================================================\n"
     return out.encode('utf-8')
 
-def make_certified_pdf(title, summary, df):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
-    styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#FF5722'), spaceAfter=15)
-    section_style = ParagraphStyle('SectionStyle', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#262626'), spaceBefore=10, spaceAfter=10)
-    normal_style = ParagraphStyle('NormalStyle', parent=styles['Normal'], fontSize=10, spaceAfter=5)
-    
-    story.append(Paragraph(title, title_style))
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("<b>RIEPILOGO COMMESSA:</b>", section_style))
-    for k, v in summary.items():
-        story.append(Paragraph(f"• <b>{k}:</b> {v}", normal_style))
-        
-    story.append(Spacer(1, 15))
-    story.append(Paragraph("<b>DETTAGLI ELEMENTI ELABORATI:</b>", section_style))
-    
-    data = [df.columns.tolist()] + df.values.tolist()
-    formatted_data = [[Paragraph(str(cell), normal_style) for cell in row] for row in data]
-    
-    t = Table(formatted_data, hAlign='LEFT')
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#262626')),
-        ('TEXTCOLOR', (0,0), (-1,0), colors.white),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('BOTTOMPADDING', (0,0), (-1,0), 6),
-        ('TOPPADDING', (0,0), (-1,0), 6),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F5F5F5')])
-    ]))
-    story.append(t)
-    
-    doc.build(story)
-    return buffer.getvalue()
-
 # =============================================================================
 # DIZIONARIO DI TRADUZIONE ESTESO (IT, EN, DE, FR, ES, RO, PT, HU, PL)
 # =============================================================================
-lang = st.sidebar.selectbox("🌐 LINGUA / LANGUAGE", ["IT", "EN", "DE", "FR", "ES", "RO", "PT", "HU", "PL"])
+lang = st.sidebar.selectbox("🌐 LINGUA / LANGUAGE / SPRACHE / LANGUE / IDIOMA / LIMBĂ / LÍNGUA / NYELV / JĘZYK", 
+                            ["IT", "EN", "DE", "FR", "ES", "RO", "PT", "HU", "PL"])
 
 if st.sidebar.button("🔄 RESET GENERAL"):
     st.session_state.results_1d = None
@@ -194,7 +157,7 @@ TXT = {
         "esporta": "💾 PRODUKTIONSDATEN EXPORTIEREN",
         "scarto_min_1d": "MINDESTLÄNGE WIEDERVERWENDUNG (mm)",
         "area_min_2d": "MINDESTFLÄCHE RESTE (m²)",
-        "standby_2d": "WARTEN AUF DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung."
+        "standby_2d": "WARTEN ON DXF-DATEIEN\n\nLaden Sie die .dxf-Geometriedateien hoch, geben Sie die Stückzahlen ein und starten Sie die Optimierung."
     },
     "FR": {
         "title": "Imbrication Géométrique & Optimisation",
@@ -271,7 +234,7 @@ TXT = {
         "stock_applicato": "💥 Estoque atualizado com sucesso! Material baixado.",
         "spessore": "ESPESSURA DA CHAPA (mm)",
         "bordo": "MARGEM PERIMETRAL (mm)",
-        "esporta": "💾 EXPORTAR DADOS DE PRODUCTION",
+        "esporta": "💾 EXPORTAR DADOS DE PRODUÇÃO",
         "scarto_min_1d": "COMPRIMENTO MÍNIMO REUTILIZÁVEL (mm)",
         "area_min_2d": "ÁREA MÍNIMA REUTILIZÁVEL (m²)",
         "standby_2d": "AGUARDANDO ARQUIVOS DXF\n\nCarregue os arquivos .dxf das peças, defina as quantidades necessárias e execute o nesting."
@@ -294,7 +257,7 @@ TXT = {
         "esporta": "💾 TERMELÉSI ADATOK EXPORTÁLÁSA",
         "scarto_min_1d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ HOSSZ (mm)",
         "area_min_2d": "MINIMÁLIS ÚJRAHASZNOSÍTHATÓ TERÜLET (m²)",
-        "standby_2d": "DXF FÁJLOKRA VÁR\n\nTöltse fel a .dxf geometriai fáljokat, adja meg a darabszámokat, és indítsa el a fésülést."
+        "standby_2d": "DXF FÁJLOKRA VÁR\n\nTöltse fel a .dxf geometriai fájlokat, adja meg a darabszámokat, és indítsa el a fésülést."
     },
     "PL": {
         "title": "Nesting Geometryczny i Optymalizacja",
@@ -317,7 +280,6 @@ TXT = {
         "standby_2d": "OCZEKIWANIE NA PLIKI DXF\n\nZaładuj pliki geometryczne .dxf, ustaw ilości dla każdego elementu i uruchom optymalizację."
     }
 }
-
 T = TXT[lang]
 HEX_COLORI = {"1200": "#3B82F6", "850": "#10B981", "340": "#8B5CF6", "default": "#4B5563"}
 
@@ -372,7 +334,7 @@ with tab_1d:
             
             for pezzo in reqs:
                 inserito = False
-                for b in piani_barre:
+                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -457,13 +419,12 @@ with tab_1d:
                 for i, b in enumerate(res["piani"])
             ])
             
-            c1, c2, c3, c4 = st.columns(4)
+            c1, c2, c3 = st.columns(3)
             c1.download_button("📥 DOWNLOAD 1D CSV", make_pure_csv(df_exp), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
             c2.download_button("📊 DOWNLOAD 1D EXCEL (.XLSX)", make_real_excel(df_exp), f"Nesting_1D_{num_ordine_1d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             
             summary_1d = {"N_Ordine": num_ordine_1d, "Cliente": nome_cliente_1d, "Barre_Lavorate": len(res["piani"])}
-            c3.download_button("📕 SCARICA PDF CERTIFICATO", make_certified_pdf("REPORT PRODUZIONE NESTING 1D", summary_1d, df_exp), f"Nesting_1D_{num_ordine_1d}.pdf", "application/pdf")
-            c4.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.txt", "text/plain")
+            c3.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.txt", "text/plain")
 
 # =============================================================================
 # SEZIONE 2D - LAMIERE
@@ -624,13 +585,12 @@ with tab_2d:
             st.markdown(f"### {T['esporta']}")
             df_exp_2d = pd.DataFrame([{"ID_Ordine": num_ordine_2d, "Cliente": nome_cliente_2d, "Spessore_Lamiera_mm": spessore_lastra, "Totale_Pezzi_Nesting": len(res2d['piazzamenti']), "Rendimento_Efficienza": res2d['saturazione'], "Scarto_Residuo_m2": res2d['scarto_mq']}])
             
-            bx1, bx2, bx3, bx4, bx5 = st.columns(5)
+            bx1, bx2, bx3, bx4 = st.columns(4)
             bx1.download_button("📥 DOWNLOAD 2D CSV", make_pure_csv(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.csv", "text/csv")
             bx2.download_button("📊 DOWNLOAD 2D EXCEL (.XLSX)", make_real_excel(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             bx3.download_button("🛠️ SCARICA DXF MASTRÒ CNC (1:1)", dxf_string, file_name=f"CNC_Layout_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
             
             summary_2d = {"N_Ordine": num_ordine_2d, "Spessore_mm": spessore_lastra, "Pezzi_Prodotti": len(res2d['piazzamenti']), "Rendimento": res2d['saturazione']}
-            bx4.download_button("📕 SCARICA PDF CERTIFICATO", make_certified_pdf("REPORT PRODUZIONE NESTING 2D", summary_2d, df_exp_2d), f"Nesting_2D_{num_ordine_2d}.pdf", "application/pdf")
-            bx5.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 2D", summary_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.txt", "text/plain")
+            bx4.download_button("📋 SCARICA REPORT PRODUZIONE (.TXT)", make_text_report("REPORT PRODUTTIVO NESTING 2D", summary_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.txt", "text/plain")
         else:
             st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
