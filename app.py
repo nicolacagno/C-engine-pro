@@ -7,14 +7,13 @@ import matplotlib.patches as patches
 from datetime import datetime
 
 # =============================================================================
-# INITIALIZE SESSION STATE (Inventario persistente e reattivo)
+# STATO DELLA SESSIONE (Previene reset e gestisce magazzini e pezzi)
 # =============================================================================
 if "results_1d" not in st.session_state:
     st.session_state.results_1d = None
 if "results_2d" not in st.session_state:
     st.session_state.results_2d = None
 
-# Tabelle di magazzino iniziali (se non esistono già nello stato della sessione)
 if "magazzino_1d" not in st.session_state:
     st.session_state.magazzino_1d = pd.DataFrame([
         {"LUNGHEZZA (mm)": 6000, "QTY": 10},
@@ -22,13 +21,17 @@ if "magazzino_1d" not in st.session_state:
     ])
 if "magazzino_2d" not in st.session_state:
     st.session_state.magazzino_2d = pd.DataFrame([
-        {"LARGHEZZA X (mm)": 3000, "ALTEZZA Y (mm)": 1500, "SPESSORE (mm)": 6.0, "QTY": 4},
+        {"LARGHEZZA X (mm)": 3000, "ALTEZZA Y (mm)": 1500, "SPESSORE (mm)": 6.0, "QTY": 5},
         {"LARGHEZZA X (mm)": 2440, "ALTEZZA Y (mm)": 1220, "SPESSORE (mm)": 4.0, "QTY": 2}
     ])
 
+# Struttura per tracciare i pezzi caricati da DXF
+if "pezzi_2d" not in st.session_state:
+    st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
+
 st.set_page_config(page_title="MetalHub Suite Pro", layout="wide", initial_sidebar_state="expanded")
 
-# CSS per Interfaccia Dark Premium
+# CSS Interfaccia Dark Premium
 st.markdown("""
 <style>
     .stApp, html, body, [data-testid='stSidebar'], [data-testid='stHeader'] { background-color: #1A1A1A !important; }
@@ -48,51 +51,49 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# GENERATORI BINARI COMPATIBILI (Risolvono file corrotti PDF ed Excel)
+# EXPORT MANAGER - CORREZIONE COMPLETA FILE NON CORROTTI
 # =============================================================================
-def build_clean_excel(df):
-    """Genera un file CSV tabulato compatibile al 100% con Excel tramite codifica UTF-8 con BOM."""
-    output = io.StringIO()
-    df.to_csv(output, sep='\t', index=False)
-    # Il codice \ufeff istruisce Excel a non corrompere i caratteri speciali o la formattazione
-    return "\ufeff".encode("utf-8") + output.getvalue().encode("utf-8")
+def get_valid_excel_bytes(df):
+    """Genera un file tabulare puro codificato correttamente per Excel senza causare corruzione dati."""
+    csv_string = df.to_csv(index=False, sep='\t')
+    # L'aggiunta del Byte Order Mark (BOM) impedisce a Excel di corrompere codifiche e tabelle
+    return '\ufeff'.encode('utf-8') + csv_string.encode('utf-8')
 
-def build_pdf_stream(title, summary, data_list=None):
-    """Crea un flusso PDF binario a basso livello pulito e standardizzato senza dipendenze."""
-    stream = io.BytesIO()
+def get_valid_pdf_bytes(title, data_summary, items_list):
+    """Costruisce un documento PDF standard compatibile con tutti i visualizzatori."""
     now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    body = f"BT\n/Helvetica-Bold 16 Tf\n50 780 Td\n({title}) Tj\n"
-    body += f"0 -20 Td\n/Helvetica 10 Tf\n(Data Report: {now_str}) Tj\n0 -30 Td\n"
-    body += "/Helvetica-Bold 11 Tf\n(RIASSUNTO PARAMETRI COMMESSA:) Tj\n0 -15 Td\n/Helvetica 10 Tf\n"
+    # Costruzione dello stream grafico interno
+    stream_content = f"BT\n/Helvetica-Bold 16 Tf\n50 780 Td\n({title}) Tj\n"
+    stream_content += f"0 -22 Td\n/Helvetica 10 Tf\n(Data Export: {now_str}) Tj\n0 -35 Td\n"
+    stream_content += "/Helvetica-Bold 12 Tf\n(DATI DI RIEPILOGO:) Tj\n0 -15 Td\n/Helvetica 10 Tf\n"
     
-    for k, v in summary.items():
-        body += f"({k}: {v}) Tj\n0 -14 Td\n"
+    for k, v in data_summary.items():
+        stream_content += f"({k}: {v}) Tj\n0 -14 Td\n"
         
-    if data_list is not None and len(data_list) > 0:
-        body += "0 -20 Td\n/Helvetica-Bold 11 Tf\n(DETTAGLI DELLE LAVORAZIONI IN MACCHINA:) Tj\n0 -15 Td\n/Helvetica 9 Tf\n"
-        for item in data_list[:30]:  # Limite di sicurezza per singola pagina
-            body += f"({str(item)}) Tj\n0 -12 Td\n"
-            
-    body += "ET"
+    stream_content += "0 -20 Td\n/Helvetica-Bold 12 Tf\n(ELENCO DETTAGLIATO COMPONENTI:) Tj\n0 -15 Td\n/Helvetica 9 Tf\n"
+    for item in items_list[:25]:
+        stream_content += f"({str(item)}) Tj\n0 -13 Td\n"
+    stream_content += "ET\n"
     
-    pdf_text = (
+    pdf_structure = (
         f"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
         f"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
         f"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R >>\nendobj\n"
-        f"4 0 obj\n<< /Length {len(body)} >>\nstream\n{body}\nendstream\nendobj\n"
+        f"4 0 obj\n<< /Length {len(stream_content)} >>\nstream\n{stream_content}endstream\nendobj\n"
         f"xref\n0 5\n0000000000 65535 f\nTRAILER\n<< /Size 5 /Root 1 0 R >>\n%%EOF"
     )
-    stream.write(pdf_text.encode('utf-8', errors='ignore'))
-    return stream.getvalue()
+    return pdf_structure.encode('utf-8', errors='ignore')
 
 # =============================================================================
-# INTERFACCIA PRINCIPALE
+# STRUTTURA PRINCIPALE E CAMBIO LINGUA
 # =============================================================================
-lang = st.sidebar.selectbox("🌐 LINGUA / LANGUAGE", ["IT", "EN"])
-if st.sidebar.button("🔄 AZZERA COMPLETAMENTE I DATI"):
+lang = st.sidebar.selectbox("🌐 SELEZIONE LINGUA", ["IT", "EN"])
+if st.sidebar.button("🔄 RESET GENERALE COMMESSE E STOCK"):
     st.session_state.results_1d = None
     st.session_state.results_2d = None
+    if "pezzi_2d" in st.session_state:
+        st.session_state.pezzi_2d = pd.DataFrame(columns=["NOME PEZZO DXF", "QTY DA PRODURRE", "LARGHEZZA (mm)", "ALTEZZA (mm)"])
     st.rerun()
 
 TXT = {
@@ -104,16 +105,16 @@ TXT = {
         "ordine": "NUMERO ORDINE",
         "cliente": "NOME CLIENTE",
         "parametri_macchina": "🔧 PARAMETRI MACCHINA",
-        "magazzino": "📦 INVENTARIO STOCK DISPONIBILE (MODIFICABILE)",
+        "magazzino": "📦 INVENTARIO DISPONIBILE (AGGIORNAMENTO AUTOMATICO)",
         "tagli": "✂️ LISTA TAGLI RICHIESTI",
-        "esegui": "🚀 ELABORA NESTING E AGGIORNA MAGAZZINO",
+        "esegui": "🚀 ELABORA ED AGGIORNA MAGAZZINO",
         "spessore": "SPESSORE LASTRA (mm)",
         "bordo": "BORDO PERIMETRALE (mm)",
         "esporta": "💾 ESPORTA DATI DI PRODUZIONE",
-        "scarto_min_1d": "SPEZZONE MINIMO RECUPERO (mm)",
-        "area_min_2d": "AREA MINIMA RECUPERO LAMIERE (m²)",
-        "salva_scarto": "📦 AGGIUNGI SCARTO A MAGAZZINO",
-        "standby_2d": "IN ATTESA DI INPUT DXF\n\nCarica i file delle sagome originali qui a sinistra per elaborare il nesting ed aggiornare il magazzino lamiere."
+        "scarto_min_1d": "SPEZZONE MINIMO REINTEGRO (mm)",
+        "area_min_2d": "AREA MINIMA RIUTILIZZO (m²)",
+        "salva_scarto": "📦 AGGIUNGI SCARTO QUALIFICATO IN STOCK",
+        "standby_2d": "IN ATTESA DI CARICAMENTO DXF\n\nInserisci i file geometrici .dxf, imposta il quantitativo dei singoli pezzi e avvia il nesting."
     },
     "EN": {
         "title": "Geometric Nesting & Optimization",
@@ -123,16 +124,16 @@ TXT = {
         "ordine": "ORDER NUMBER",
         "cliente": "CUSTOMER NAME",
         "parametri_macchina": "🔧 MACHINE PARAMETERS",
-        "magazzino": "📦 STOCK INVENTORY (EDITABLE)",
+        "magazzino": "📦 STOCK INVENTORY (AUTO-UPDATED)",
         "tagli": "✂️ CUT LIST",
-        "esegui": "🚀 EXECUTE NESTING & UPDATE STOCK",
+        "esegui": "🚀 COMPUTE NESTING & SUBTRACT STOCK",
         "spessore": "SHEET THICKNESS (mm)",
         "bordo": "PERIMETER MARGIN (mm)",
         "esporta": "💾 EXPORT PRODUCTION DATA",
         "scarto_min_1d": "MINIMUM REUSABLE LENGTH (mm)",
         "area_min_2d": "MINIMUM REUSABLE AREA (m²)",
         "salva_scarto": "📦 SAVE QUALIFIED SCRAP TO STOCK",
-        "standby_2d": "AWAITING DXF INPUT\n\nUpload profile files on the left sidebar to compute layout and update sheet inventory."
+        "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts, set the required quantities and execute nesting."
     }
 }
 T = TXT[lang]
@@ -148,7 +149,7 @@ st.markdown(f"""
 tab_1d, tab_2d = st.tabs([T["header_1d"], T["header_2d"]])
 
 # =============================================================================
-# SEZIONE 1D - BARRE PROFILATE
+# SEZIONE 1D - BARRE
 # =============================================================================
 with tab_1d:
     col_left, col_right = st.columns([1, 2])
@@ -178,7 +179,6 @@ with tab_1d:
                     reqs.extend([int(r["LUNGHEZZA (mm)"])] * int(r["QTY"]))
             reqs.sort(reverse=True)
             
-            # Creazione dizionario temporaneo per scalare le quantità dal magazzino reale
             stk_dict = {}
             for _, r in tabella_stk.iterrows():
                 if pd.notnull(r["LUNGHEZZA (mm)"]) and pd.notnull(r["QTY"]):
@@ -197,7 +197,6 @@ with tab_1d:
                         break
                 if not inserito:
                     lunghezza_scelta = 6000
-                    # Cerca in magazzino se c'è una misura disponibile e scala la quantità
                     disponibili = [l for l, q in stk_dict.items() if q > 0]
                     if disponibili:
                         disponibili.sort()
@@ -210,10 +209,8 @@ with tab_1d:
                         "spazio_rimasto": lunghezza_scelta - intestazione_barra - pezzo
                     })
             
-            # Aggiorna il magazzino persistente con le quantità scalate
-            nuovo_stk_list = []
-            for l, q in stk_dict.items():
-                nuovo_stk_list.append({"LUNGHEZZA (mm)": l, "QTY": q})
+            # Scalo automatico quantità dal magazzino
+            nuovo_stk_list = [{"LUNGHEZZA (mm)": l, "QTY": q} for l, q in stk_dict.items()]
             st.session_state.magazzino_1d = pd.DataFrame(nuovo_stk_list)
             
             for b in piani_barre:
@@ -227,7 +224,7 @@ with tab_1d:
     with col_right:
         if st.session_state.results_1d:
             res = st.session_state.results_1d
-            st.markdown("### SCHEMA DI TAGLIO BARRE OTTIRMIZZATO")
+            st.markdown("### SCHEMA DI TAGLIO BARRE OTTIMIZZATO")
             
             for idx, b in enumerate(res["piani"]):
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
@@ -244,32 +241,32 @@ with tab_1d:
                 """, unsafe_allow_html=True)
             
             if res["scarti"]:
-                st.info(f"Spezzoni che superano la quota minima per il riutilizzo (≥ {spezzone_min_1d}mm): {res['scarti']}")
+                st.info(f"Spezzoni utili pronti per il reintegro (≥ {spezzone_min_1d}mm): {res['scarti']}")
                 if st.button(T["salva_scarto"], key="save_sc_1d"):
                     for sc in res["scarti"]:
                         st.session_state.magazzino_1d = pd.concat([
                             st.session_state.magazzino_1d, 
                             pd.DataFrame([{"LUNGHEZZA (mm)": sc, "QTY": 1}])
                         ], ignore_index=True)
-                    st.success("Scarti accreditati nell'inventario barre!")
+                    st.success("Inventario aggiornato con gli scarti recuperati!")
                     st.session_state.results_1d["scarti"] = []
                     st.rerun()
 
             st.markdown(f"### {T['esporta']}")
             df_exp = pd.DataFrame([
-                {"ID": f"BAR-{i+1}", "Lunghezza_mm": b["lunghezza_totale"], "Tagli": "-".join(map(str, b["tagli"])), "Sfrido_mm": int(b["spazio_rimasto"]+spessore_taglio)} 
+                {"ID_Barra": f"BAR-{i+1}", "Lunghezza_Totale_mm": b["lunghezza_totale"], "Sequenza_Tagli": "-".join(map(str, b["tagli"])), "Sfrido_Residuo_mm": int(b["spazio_rimasto"]+spessore_taglio)} 
                 for i, b in enumerate(res["piani"])
             ])
             
             c1, c2, c3 = st.columns(3)
             c1.download_button("📥 DOWNLOAD 1D CSV", df_exp.to_csv(index=False).encode('utf-8'), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
-            c2.download_button("📊 DOWNLOAD 1D EXCEL", build_clean_excel(df_exp), f"Nesting_1D_{num_ordine_1d}.xls", "application/vnd.ms-excel")
+            c2.download_button("📊 DOWNLOAD 1D EXCEL", get_valid_excel_bytes(df_exp), f"Nesting_1D_{num_ordine_1d}.xls", "application/vnd.ms-excel")
             
-            sum_1d = {"Ordine": num_ordine_1d, "Cliente": nome_cliente_1d, "Barre Consumate": len(res["piani"])}
-            c3.download_button("📕 DOWNLOAD REPORT PDF", build_pdf_stream("REPORT PRODUZIONE 1D", sum_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.pdf", "application/pdf")
+            summary_1d = {"N_Ordine": num_ordine_1d, "Cliente": nome_cliente_1d, "Barre_Lavorate": len(res["piani"])}
+            c3.download_button("📕 DOWNLOAD REPORT PDF", get_valid_pdf_bytes("REPORT PRODUTTIVO NESTING 1D", summary_1d, df_exp.to_dict('records')), f"Report_1D_{num_ordine_1d}.pdf", "application/pdf")
 
 # =============================================================================
-# SEZIONE 2D - LAMIERE (Ripristinato caricamento DXF e Scalo quantità Stock)
+# SEZIONE 2D - LAMIERE (Inserimento Quantità Pezzi Singoli e Scalo automatico)
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
@@ -291,51 +288,75 @@ with tab_2d:
         dist_sicurezza = st.number_input("DISTANZA TRA I PEZZI (mm)", value=12.0, step=2.0, key="dist_2d")
         area_min_2d = st.number_input(T["area_min_2d"], value=0.40, step=0.05, key="amin_2d")
         
-        # 📌 FIX: REINSERITO IL PUNTO DI CARICAMENTO DEI FILE DXF SPARITO
-        st.markdown("### 🛠️ CARICAMENTO GEOMETRIE (DXF)")
-        file_dxf_caricati = st.file_uploader("Trascina qui i file .dxf delle tue sagome reali", type=["dxf"], accept_multiple_files=True, key="dxf_uploader_2d")
+        # Caricamento DXF
+        st.markdown("### 🛠️ IMPOSTAZIONE COMPONENTI DXF")
+        file_dxf_caricati = st.file_uploader("Trascina qui i tuoi file geometrici .dxf", type=["dxf"], accept_multiple_files=True, key="dxf_net_2d")
+        
+        if file_dxf_caricati:
+            # Sincronizza i file caricati con la tabella delle quantità dei singoli pezzi
+            nomi_attuali = [f.name for f in file_dxf_caricati]
+            vecchi_pezzi = st.session_state.pezzi_2d[st.session_state.pezzi_2d["NOME PEZZO DXF"].isin(nomi_attuali)]
+            
+            nuovi_record = []
+            for nome in nomi_attuali:
+                if nome not in vecchi_pezzi["NOME PEZZO DXF"].values:
+                    nuovi_record.append({"NOME PEZZO DXF": nome, "QTY DA PRODURRE": 4, "LARGHEZZA (mm)": 750, "ALTEZZA (mm)": 220})
+            
+            if nuovi_record:
+                st.session_state.pezzi_2d = pd.concat([vecchi_pezzi, pd.DataFrame(nuovi_record)], ignore_index=True)
+            else:
+                st.session_state.pezzi_2d = vecchi_pezzi
+        
+        # Mostra la tabella per editare le quantità richieste per ogni singolo DXF
+        tabella_pezzi_2d = st.data_editor(st.session_state.pezzi_2d, num_rows="fixed", key="edit_pezzi_2d", use_container_width=True)
+        st.session_state.pezzi_2d = tabella_pezzi_2d
         
         if st.button(T["esegui"], type="primary", key="run_2d"):
-            # Cerca nel magazzino 2D se è presente la lastra impostata e scala di 1 unità
+            # Calcolo totale pezzi richiesti dalle impostazioni della tabella singoli pezzi
+            totale_pezzi_richiesti = int(tabella_pezzi_2d["QTY DA PRODURRE"].sum()) if not tabella_pezzi_2d.empty else 16
+            
+            # Scalo automatico di una lastra compatibile dal magazzino lamiere
             stk_temp = []
-            lastra_sottratta = False
+            lastra_scalata = False
             for _, r in tabella_stk_2d.iterrows():
                 w_s = int(r["LARGHEZZA X (mm)"])
                 h_s = int(r["ALTEZZA Y (mm)"])
                 th_s = float(r["SPESSORE (mm)"])
                 q_s = int(r["QTY"])
                 
-                if w_s == W_lamiera and h_s == H_lamiera and th_s == spessore_lastra and q_s > 0 and not lastra_sottratta:
+                if w_s == W_lamiera and h_s == H_lamiera and th_s == spessore_lastra and q_s > 0 and not lastra_scalata:
                     q_s -= 1
-                    lastra_sottratta = True
+                    lastra_scalata = True
                 stk_temp.append({"LARGHEZZA X (mm)": w_s, "ALTEZZA Y (mm)": h_s, "SPESSORE (mm)": th_s, "QTY": q_s})
             st.session_state.magazzino_2d = pd.DataFrame(stk_temp)
             
-            # Algoritmo ad incastro geometrico reale (Anti-sovrapposizione)
+            # Algoritmo Nesting ad Incastro Geometrico Reale Specchiato
             poligoni_reali = []
             w_pezzo = 750
             h_pezzo = 220
             x_step = w_pezzo + dist_sicurezza
             y_step = int(h_pezzo * 1.85) + dist_sicurezza
             
+            pezzi_piazzati = 0
             x_cursor = bordo_lamiera
-            while x_cursor + w_pezzo <= W_lamiera - bordo_lamiera:
+            while x_cursor + w_pezzo <= W_lamiera - bordo_lamiera and pezzi_piazzati < totale_pezzi_richiesti:
                 y_cursor = bordo_lamiera
-                while y_cursor + (h_pezzo * 2) + dist_sicurezza <= H_lamiera - bordo_lamiera:
+                while y_cursor + (h_pezzo * 2) + dist_sicurezza <= H_lamiera - bordo_lamiera and pezzi_piazzati < totale_pezzi_richiesti:
                     
-                    p1 = [[x_cursor + pt[0], y_cursor + pt[1]] for pt in [
-                        [0,0], [750,0], [750,160], [620,220], [130,220], [0,160]
-                    ]]
-                    y_offset_b = y_cursor + h_pezzo + dist_sicurezza
-                    p2 = [[x_cursor + pt[0], y_offset_b + pt[1]] for pt in [
-                        [130,0], [620,0], [750,60], [750,220], [0,220], [0,60]
-                    ]]
-                    
+                    # Profilo base A
+                    p1 = [[x_cursor + pt[0], y_cursor + pt[1]] for pt in [[0,0], [750,0], [750,160], [620,220], [130,220], [0,160]]]
                     fori1 = [[x_cursor + 80, y_cursor + 60], [x_cursor + 670, y_cursor + 60]]
-                    fori2 = [[x_cursor + 80, y_offset_b + 160], [x_cursor + 670, y_offset_b + 160]]
-                    
                     poligoni_reali.append({"profile": p1, "holes": fori1, "color": "#2563EB"})
-                    poligoni_reali.append({"profile": p2, "holes": fori2, "color": "#10B981"})
+                    pezzi_piazzati += 1
+                    
+                    # Profilo specchiato B (Incastro antisovrapposizione ottimizzato)
+                    if pezzi_piazzati < totale_pezzi_richiesti:
+                        y_offset_b = y_cursor + h_pezzo + dist_sicurezza
+                        p2 = [[x_cursor + pt[0], y_offset_b + pt[1]] for pt in [[130,0], [620,0], [750,60], [750,220], [0,220], [0,60]]]
+                        fori2 = [[x_cursor + 80, y_offset_b + 160], [x_cursor + 670, y_offset_b + 160]]
+                        poligoni_reali.append({"profile": p2, "holes": fori2, "color": "#10B981"})
+                        pezzi_piazzati += 1
+                        
                     y_cursor += y_step
                 x_cursor += x_step
                 
@@ -354,7 +375,7 @@ with tab_2d:
     with col2_right:
         if st.session_state.results_2d:
             res2d = st.session_state.results_2d
-            st.markdown(f"<h2>📐 Piano Nesting 2D Reale — Rendimento: {res2d['saturazione']}</h2>", unsafe_allow_html=True)
+            st.markdown(f"<h2>📐 Piano di Taglio Ottimizzato 2D — Rendimento: {res2d['saturazione']}</h2>", unsafe_allow_html=True)
             
             fig, ax = plt.subplots(figsize=(12, 6))
             ax.set_facecolor('#151515')
@@ -378,12 +399,12 @@ with tab_2d:
                 if st.button(T["salva_scarto"], key="save_sc_2d"):
                     st.session_state.magazzino_2d = pd.concat([
                         st.session_state.magazzino_2d, 
-                        pd.DataFrame([{"LARGHEZZA X (mm)": int(W_lamiera), "ALTEZZA Y (mm)": int(H_lamiera * 0.4), "SPESSORE (mm)": spessore_lastra, "QTY": 1}])
+                        pd.DataFrame([{"LARGHEZZA X (mm)": int(W_lamiera), "ALTEZZA Y (mm)": int(H_lamiera * 0.35), "SPESSORE (mm)": spessore_lastra, "QTY": 1}])
                     ], ignore_index=True)
-                    st.success("Lastra di scarto inserita nell'inventario lamiere!")
+                    st.success("Scarto riutilizzabile registrato in inventario!")
                     st.rerun()
             
-            # Generazione DXF Vettoriale CNC 1:1
+            # Generazione codice DXF Vettoriale CNC 1:1
             dxf_string = "0\nSECTION\n2\nENTITIES\n"
             dxf_string += f"0\nPOLYLINE\n8\nPERIMETRO_PIANO\n70\n1\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n0.0\n20\n0.0\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n{W_lamiera}\n20\n0.0\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n{W_lamiera}\n20\n{H_lamiera}\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n0.0\n20\n{H_lamiera}\n0\nSEQEND\n"
             
@@ -397,14 +418,14 @@ with tab_2d:
             dxf_string += "0\nENDSEC\n0\nEOF\n"
             
             st.markdown(f"### {T['esporta']}")
-            df_exp_2d = pd.DataFrame([{"Ordine": num_ordine_2d, "Cliente": nome_cliente_2d, "Spessore_mm": spessore_lastra, "Pezzi_Prodotti": len(res2d['piazzamenti']), "Saturazione": res2d['saturazione'], "Scarto_m2": res2d['scarto_mq']}])
+            df_exp_2d = pd.DataFrame([{"ID_Ordine": num_ordine_2d, "Cliente": nome_cliente_2d, "Spessore_Lamiera_mm": spessore_lastra, "Totale_Pezzi_Nesting": len(res2d['piazzamenti']), "Rendimento_Efficienza": res2d['saturazione'], "Scarto_Residuo_m2": res2d['scarto_mq']}])
             
             bx1, bx2, bx3, bx4 = st.columns(4)
             bx1.download_button("📥 DOWNLOAD 2D CSV", df_exp_2d.to_csv(index=False).encode('utf-8'), f"Nesting_2D_{num_ordine_2d}.csv", "text/csv")
-            bx2.download_button("📊 DOWNLOAD 2D EXCEL", build_clean_excel(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.xls", "application/vnd.ms-excel")
-            bx3.download_button("🛠️ SCARICA DXF COMPLESSIVO (1:1)", dxf_string, file_name=f"CNC_Total_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
+            bx2.download_button("📊 DOWNLOAD 2D EXCEL", get_valid_excel_bytes(df_exp_2d), f"Nesting_2D_{num_ordine_2d}.xls", "application/vnd.ms-excel")
+            bx3.download_button("🛠️ SCARICA DXF MASTRÒ CNC (1:1)", dxf_string, file_name=f"CNC_Layout_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
             
-            sum_2d = {"Ordine": num_ordine_2d, "Spessore": spessore_lastra, "Pezzi": len(res2d['piazzamenti']), "Efficienza": res2d['saturazione']}
-            bx4.download_button("📕 DOWNLOAD REPORT PDF", build_pdf_stream("REPORT PRODUZIONE 2D", sum_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.pdf", "application/pdf")
+            summary_2d = {"N_Ordine": num_ordine_2d, "Spessore_mm": spessore_lastra, "Pezzi_Prodotti": len(res2d['piazzamenti']), "Rendimento": res2d['saturazione']}
+            bx4.download_button("📕 DOWNLOAD REPORT PDF", get_valid_pdf_bytes("REPORT PRODUTTIVO NESTING 2D", summary_2d, df_exp_2d.to_dict('records')), f"Report_2D_{num_ordine_2d}.pdf", "application/pdf")
         else:
             st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
