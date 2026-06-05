@@ -4,19 +4,10 @@ import numpy as np
 import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-
-# Import per la lettura e scrittura CAD professionale
 import ezdxf
 
-# Gestione protetta dell'importazione di ReportLab per evitare il crash del server
-try:
-    from reportlab.lib.pagesizes import letter
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib import colors
-    REPORTLAB_AVAILABLE = True
-except ModuleNotFoundError:
-    REPORTLAB_AVAILABLE = False
+# Abbiamo rimosso reportlab dall'avvio per impedire il blocco del server cloud.
+REPORTLAB_AVAILABLE = False
 
 # =============================================================================
 # STATO DELLA SESSIONE (Persistenza magazzino e risultati temporanei)
@@ -148,63 +139,6 @@ def make_real_excel(df):
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False, sheet_name='Nesting_Report')
     return output.getvalue()
-
-def make_real_pdf(title, summary, df, fig_to_embed=None):
-    if not REPORTLAB_AVAILABLE:
-        return b"ReportLab non installato sul server cloud."
-        
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
-    
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], textColor=colors.HexColor('#FF5722'), spaceAfter=15)
-    section_style = ParagraphStyle('SectionStyle', parent=styles['Heading3'], spaceBefore=10, spaceAfter=10)
-    normal_style = styles['Normal']
-    
-    story.append(Paragraph(title, title_style))
-    story.append(Spacer(1, 10))
-    story.append(Paragraph("<b>RIEPILOGO PARAMETRI COMMESSA:</b>", section_style))
-    for k, v in summary.items():
-        story.append(Paragraph(f"• <b>{k}:</b> {v}", normal_style))
-    story.append(Spacer(1, 15))
-    story.append(Paragraph("<b>DETTAGLIO PRODUZIONE:</b>", section_style))
-    
-    table_data = [df.columns.values.tolist()] + df.values.tolist()
-    formatted_table_data = []
-    for row_idx, row in enumerate(table_data):
-        formatted_row = []
-        for cell in row:
-            if row_idx == 0:
-                formatted_row.append(Paragraph(f"<b>{str(cell)}</b>", normal_style))
-            else:
-                formatted_row.append(Paragraph(str(cell), normal_style))
-        formatted_table_data.append(formatted_row)
-        
-    prod_table = Table(formatted_table_data, hAlign='LEFT')
-    prod_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#262626')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
-        ('TOPPADDING', (0, 0), (-1, 0), 6),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F5F5F5')]),
-        ('FONTSIZE', (0, 0), (-1, -1), 9),
-    ]))
-    story.append(prod_table)
-    
-    if fig_to_embed is not None:
-        story.append(Spacer(1, 20))
-        story.append(Paragraph("<b>SCHEMA GRAFICO DI TAGLIO (LAYOUT PER OPERATORE):</b>", section_style))
-        img_buffer = io.BytesIO()
-        fig_to_embed.savefig(img_buffer, format='png', bbox_inches='tight', dpi=200)
-        img_buffer.seek(0)
-        reportlab_img = Image(img_buffer, width=500, height=250)
-        story.append(reportlab_img)
-        
-    doc.build(story)
-    return buffer.getvalue()
 
 def generate_industrial_dxf(W, H, piazzamenti):
     doc = ezdxf.new('R2010')
@@ -340,7 +274,7 @@ with tab_1d:
             barre_usate_per_conferma = {}
             for pezzo in reqs:
                 inserito = False
-                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
+                for b in piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -392,10 +326,7 @@ with tab_1d:
             c1, c2, c3 = st.columns(3)
             c1.download_button("📥 CSV", make_pure_csv(df_exp), "Nesting_1D.csv")
             c2.download_button("📊 EXCEL", make_real_excel(df_exp), "Nesting_1D.xlsx")
-            if REPORTLAB_AVAILABLE:
-                c3.download_button("📄 PDF", make_real_pdf("REPORT BARRE 1D", {"N_Ordine": num_ordine_1d}, df_exp, fig_1d), "Nesting_1D.pdf")
-            else:
-                c3.button("📄 PDF (ReportLab non inst.)", disabled=True)
+            c3.button("📄 PDF (Funzione Sospesa)", disabled=True)
             plt.close(fig_1d)
 
 # =============================================================================
@@ -410,7 +341,6 @@ with tab_2d:
         nome_cliente_2d = st.text_input(T["cliente"], value="Carpenteria Metallica Srl", key="cli_2d")
         
         st.markdown(f"### {T['magazzino']}")
-        # Corretto il bug NameError rinominando coerentemente la variabile in tabella_stk_2d
         tabella_stk_2d = st.data_editor(st.session_state.magazzino_2d, num_rows="dynamic", key="stk_ed_2d", use_container_width=True)
         st.session_state.magazzino_2d = tabella_stk_2d
         
@@ -484,7 +414,7 @@ with tab_2d:
             area_scarto_mq = round(area_totale_mq - area_taglio_mq, 2)
             
             st.session_state.results_2d = {
-                "piazzamenti": piani_piazzati,
+                "piazzamenti": pianos_piazzati if 'pianos_piazzati' in locals() else piani_piazzati,
                 "scarto_mq": area_scarto_mq,
                 "saturazione": f"{round((area_taglio_mq/area_totale_mq)*100, 1)}%",
                 "dimension_lastra_usata": {"W": W_lamiera, "H": H_lamiera, "THK": spessore_lastra}
@@ -548,11 +478,7 @@ with tab_2d:
             bx1.download_button("📥 DOWNLOAD CSV", make_pure_csv(df_exp_2d), "Nesting_2D.csv")
             bx2.download_button("📊 DOWNLOAD EXCEL", make_real_excel(df_exp_2d), "Nesting_2D.xlsx")
             bx3.download_button("🛠️ SCARICA DXF NESTING REAL 1:1", dxf_string_reale, file_name=f"Layout_CAM_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
-            
-            if REPORTLAB_AVAILABLE:
-                bx4.download_button("📄 SCARICA PDF RELAZIONE", make_real_pdf("REPORT NESTING 2D", {"Ordine": num_ordine_2d}, df_exp_2d, fig), "Nesting_2D.pdf")
-            else:
-                bx4.button("📄 PDF DISATTIVATO (Manca ReportLab)", disabled=True)
+            bx4.button("📄 PDF DISATTIVATO (Manca Componente Server)", disabled=True)
             plt.close(fig)
         else:
             st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
