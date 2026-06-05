@@ -66,63 +66,52 @@ st.markdown("""
 # PARSER GEOMETRICO AVANZATO E INTERPRETE INDUSTRIAL DXF v3
 # =============================================================================
 def parse_uploaded_dxf(file_bytes):
-    """Estrae geometrie da DXF ASCII, Binari, con supporto completo a LINE, CIRCLE, ARC, SPLINE e BLOCCHI."""
+    """Versione Diagnostica Forzata: ci dice a schermo cosa sta succedendo."""
+    st.write(f"🔍 DEBUG: Dimensione file ricevuta dal parser = {len(file_bytes)} byte")
+    if len(file_bytes) == 0:
+        st.error("❌ ERRORE DEBUG: Il file è completamente vuoto!")
+        return None, None, None
+        
     try:
+        # Forza la lettura binaria pura che non fallisce mai sulla decodifica testo
         try:
+            doc = ezdxf.read_bytes(file_bytes)
+            st.write("🔍 DEBUG: Lettura byte riuscita con read_bytes")
+        except Exception as err_bytes:
+            st.write(f"🔍 DEBUG: read_bytes fallito ({str(err_bytes)}), provo con stringa...")
             stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
             doc = ezdxf.read(stream)
-        except Exception:
-            doc = ezdxf.read_bytes(file_bytes)
+            st.write("🔍 DEBUG: Lettura stringa riuscita")
             
         msp = doc.modelspace()
+        
+        # Contiamo quante entità ci sono in tutto nel file
+        tutte_le_entita = list(msp)
+        st.write(f"🔍 DEBUG: Numero totale di entità grezze trovate nel Modelspace = {len(tutte_le_entita)}")
+        for ent in tutte_le_entita[:5]: # mostra i primi 5 tipi di entità
+            st.write(f"   - Trovata entità tipo: {ent.dxftype()}")
+
         geometrie = {"linee": [], "cerchi": [], "polilinee": []}
         
-        def estrai_entita(spazio):
-            # Linee singole
-            for e in spazio.query('LINE'):
-                geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
-            
-            # Cerchi/Fori
-            for e in spazio.query('CIRCLE'):
-                geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
-            
-            # Polilinee standard
-            for e in spazio.query('LWPOLYLINE POLYLINE'):
+        # Lettura ultra-semplificata per il test
+        for e in msp.query('LINE'):
+            geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
+        for e in msp.query('CIRCLE'):
+            geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
+        for e in msp.query('LWPOLYLINE POLYLINE ARC SPLINE ELLIPSE'):
+            try:
+                punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
+                if punti: geometrie["polilinee"].append(punti)
+            except:
                 try:
-                    punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
-                    if punti: geometrie["polilinee"].append(punti)
-                except:
-                    pass
-            
-            # Archi, Spline ed Ellissi (Vengono convertiti in segmenti)
-            for e in spazio.query('ARC SPLINE ELLIPSE'):
-                try:
-                    punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.2)]
+                    punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.5)]
                     if punti_curva: geometrie["polilinee"].append(punti_curva)
                 except:
                     pass
 
-        # 1. Estrazione elementi dallo spazio modello principale
-        estrai_entita(msp)
-        
-        # 2. Estrazione ed esplosione dei Blocchi Interni (INSERT)
-        for insert in msp.query('INSERT'):
-            try:
-                for e in insert.virtual_entities():
-                    if e.dxftype() == 'LINE':
-                        geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
-                    elif e.dxftype() == 'CIRCLE':
-                        geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
-                    elif e.dxftype() in ('LWPOLYLINE', 'POLYLINE'):
-                        punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
-                        if punti: geometrie["polilinee"].append(punti)
-                    elif e.dxftype() in ('ARC', 'SPLINE', 'ELLIPSE'):
-                        punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.2)]
-                        if punti_curva: geometrie["polilinee"].append(punti_curva)
-            except:
-                pass
+        st.write(f"🔍 DEBUG: Conteggio finale -> Linee: {len(geometrie['linee'])}, Cerchi: {len(geometrie['cerchi'])}, Polilinee/Curve: {len(geometrie['polilinee'])}")
 
-        # Calcolo Bounding Box complessivo
+        # Calcolo Bounding Box
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
@@ -141,10 +130,14 @@ def parse_uploaded_dxf(file_bytes):
             width = max_x - min_x
             height = max_y - min_y
             geometrie["offset"] = (min_x, min_y)
+            st.write(f"🔍 DEBUG: Calcolo ingombro riuscito! {width}x{height}")
             return geometrie, round(width, 1), round(height, 1)
+        else:
+            st.write("🔍 DEBUG: Nessuna coordinata X/Y valida estratta dalle entità.")
             
-    except Exception:
-        pass
+    except Exception as e_globale:
+        st.error(f"❌ ERRORE CRITICO NEL PARSER: {str(e_globale)}")
+        
     return None, None, None
 
 # =============================================================================
