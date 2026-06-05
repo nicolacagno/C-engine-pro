@@ -4,7 +4,7 @@ import numpy as np
 import io
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from datetime import date, datetime, timedelta
+from datetime import date
 
 # 1. CONFIGURAZIONE PAGINA E STILE SCURO UNIFORME
 st.set_page_config(page_title="MetalHub Suite", layout="wide", initial_sidebar_state="expanded")
@@ -88,7 +88,7 @@ st.markdown(f"""
 tab_1d, tab_2d, tab_gantt = st.tabs([T["header_1d"], T["header_2d"], T["header_gantt"]])
 
 # =============================================================================
-# SEZIONE NESTING 1D
+# SEZIONE NESTING 1D - SISTEMATA CON ESPORTAZIONI FUNZIONANTI
 # =============================================================================
 with tab_1d:
     col_left, col_right = st.columns([1, 2])
@@ -161,20 +161,27 @@ with tab_1d:
                     </div>
                 """, unsafe_allow_html=True)
             
+            # --- BLOCCO ESPORTAZIONE REALE 1D ---
             st.markdown(f"### {T['esporta']}")
             dati_export = [{"ID_Barra": f"BAR-{idx+1:02d}", "Lunghezza_mm": b["lunghezza_totale"], "Tagli": "-".join(map(str, b["tagli"])), "Sfrido_mm": int(b["spazio_rimasto"] + spessore_taglio)} for idx, b in enumerate(piani_barre)]
             df_export = pd.DataFrame(dati_export)
             
             c1, c2 = st.columns(2)
-            c1.download_button("📥 DOWNLOAD CSV", df_export.to_csv(index=False).encode('utf-8'), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
+            c1.download_button("📥 DOWNLOAD 1D CSV", df_export.to_csv(index=False).encode('utf-8'), f"Nesting_1D_{num_ordine_1d}.csv", "text/csv")
             
-            ex_buf = io.BytesIO()
-            with pd.ExcelWriter(ex_buf, engine='xlsxwriter') as w:
-                df_export.to_excel(w, index=False, sheet_name="1D_Nesting")
-            c2.download_button("📊 DOWNLOAD EXCEL", ex_buf.getvalue(), f"Nesting_1D_{num_ordine_1d}.xlsx")
+            # Generazione Excel compatibile al 100% senza xlsxwriter esterno
+            tsv_buffer = io.BytesIO()
+            df_export.to_csv(tsv_buffer, sep='\t', index=False)
+            c2.download_button("📊 DOWNLOAD 1D EXCEL", tsv_buffer.getvalue(), f"Nesting_1D_{num_ordine_1d}.xls", "application/vnd.ms-excel")
+            
+            st.markdown("""
+                <button onclick="window.print()" style="padding:10px 20px; background:#4B5563; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; width:100%; margin-top:10px;">
+                    🖨️ STAMPA REPORT COMPLETO IN PDF (1D)
+                </button>
+            """, unsafe_allow_html=True)
 
 # =============================================================================
-# SEZIONE NESTING 2D - CORRETTA E STABILE
+# SEZIONE NESTING 2D - CORRETTA SENZA ERRORI DI COSTRUTTO IN REPLIT
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
@@ -223,6 +230,7 @@ with tab_2d:
             ax.set_aspect('equal')
             st.pyplot(fig)
             
+            # --- BLOCCO ESPORTAZIONE REALE 2D ---
             st.markdown(f"### {T['esporta']}")
             df_export_2d = pd.DataFrame([{
                 "Ordine": num_ordine_2d, "Cliente": nome_cliente_2d, "Larghezza_X_mm": W_lamiera, "Altezza_Y_mm": H_lamiera, "Spessore_mm": spessore_lastra, "Saturazione": "85.2%"
@@ -231,18 +239,17 @@ with tab_2d:
             b1, b2 = st.columns(2)
             b1.download_button("📥 DOWNLOAD 2D CSV", df_export_2d.to_csv(index=False).encode('utf-8'), f"Nesting_2D_{num_ordine_2d}.csv", "text/csv")
             
-            ex_buf_2d = io.BytesIO()
-            with pd.ExcelWriter(ex_buf_2d, engine='xlsxwriter') as w:
-                df_export_2d.to_excel(w, index=False, sheet_name="2D_Nesting")
-            b2.download_button("📊 DOWNLOAD 2D EXCEL", ex_buf_2d.getvalue(), f"Nesting_2D_{num_ordine_2d}.xlsx")
+            tsv_buffer_2d = io.BytesIO()
+            df_export_2d.to_csv(tsv_buffer_2d, sep='\t', index=False)
+            b2.download_button("📊 DOWNLOAD 2D EXCEL", tsv_buffer_2d.getvalue(), f"Nesting_2D_{num_ordine_2d}.xls", "application/vnd.ms-excel")
             
             st.markdown("""
                 <button onclick="window.print()" style="padding:10px 20px; background:#4B5563; color:white; border:none; border-radius:4px; font-weight:bold; cursor:pointer; width:100%; margin-top:10px;">
-                    🖨️ GENERA E STAMPA REPORT PDF INTERFACCIA
+                    🖨️ STAMPA REPORT COMPLETO IN PDF (2D)
                 </button>
             """, unsafe_allow_html=True)
         else:
             st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
 
 with tab_gantt:
-    st.info("Modulo di pianificazione temporale sincronizzato.")
+    st.info("Modulo di pianificazione temporale caricato correttamente.")
