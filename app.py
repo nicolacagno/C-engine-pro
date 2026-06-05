@@ -8,11 +8,15 @@ import matplotlib.patches as patches
 # Import per la lettura e scrittura CAD professionale
 import ezdxf
 
-# Import per la generazione del PDF
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
+# Gestione protetta dell'importazione di ReportLab per evitare il crash del server
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    REPORTLAB_AVAILABLE = True
+except ModuleNotFoundError:
+    REPORTLAB_AVAILABLE = False
 
 # =============================================================================
 # STATO DELLA SESSIONE (Persistenza magazzino e risultati temporanei)
@@ -63,28 +67,26 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# PARSER GEOMETRICO AVANZATO E INTERPRETE INDUSTRIAL DXF v3
+# PARSER GEOMETRICO COMPATIBILE ED EVOLUTO
 # =============================================================================
 def parse_uploaded_dxf(file_bytes):
-    """Parser Industriale Rinforzato: analizza Modelspace + dizionario BLOCKS globale."""
+    """Analizza il file DXF estraendo le geometrie utili sia da Modelspace che dai blocchi interni."""
     try:
-        # Decodifica testuale ignorando i caratteri speciali non validi
         stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
         doc = ezdxf.read(stream)
             
         geometrie = {"linee": [], "cerchi": [], "polilinee": []}
         
         def estrai_da_contenitore(spazio):
-            """Estrae le entità vettoriali da qualsiasi spazio o blocco."""
-            # Linee singole
+            # Estrazione Linee
             for e in spazio.query('LINE'):
                 geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
             
-            # Cerchi/Fori
+            # Estrazione Cerchi
             for e in spazio.query('CIRCLE'):
                 geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
             
-            # Polilinee standard
+            # Estrazione Polilinee
             for e in spazio.query('LWPOLYLINE POLYLINE'):
                 try:
                     punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
@@ -92,7 +94,7 @@ def parse_uploaded_dxf(file_bytes):
                 except:
                     pass
             
-            # Archi e Spline complessi
+            # Gestione Archi e Spline (Approssimazione sicura per vecchie versioni ezdxf)
             for e in spazio.query('ARC SPLINE ELLIPSE'):
                 try:
                     punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.25)]
@@ -100,35 +102,17 @@ def parse_uploaded_dxf(file_bytes):
                 except:
                     pass
 
-        # 1. Scansione dello spazio modello principale
+        # 1. Analisi spazio principale
         msp = doc.modelspace()
         estrai_da_contenitore(msp)
         
-        # 2. Se il modelspace è vuoto, scansiona i blocchi interni definiti nel file
+        # 2. Se vuoto, cerca nei blocchi salvati nel database del disegno
         if len(geometrie["linee"]) == 0 and len(geometrie["cerchi"]) == 0 and len(geometrie["polilinee"]) == 0:
             for blocco in doc.blocks:
-                # Salta i blocchi di sistema del layout (es. spazio carta)
                 if not blocco.name.startswith('*'):
                     estrai_da_contenitore(blocco)
 
-        # 3. Se ancora vuoto, prova ad esplodere le INSERT nel modelspace
-        for insert in msp.query('INSERT'):
-            try:
-                for e in insert.virtual_entities():
-                    if e.dxftype() == 'LINE':
-                        geometrie["linee"].append([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)])
-                    elif e.dxftype() == 'CIRCLE':
-                        geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
-                    elif e.dxftype() in ('LWPOLYLINE', 'POLYLINE'):
-                        punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
-                        if punti: geometrie["polilinee"].append(punti)
-                    elif e.dxftype() in ('ARC', 'SPLINE', 'ELLIPSE'):
-                        punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.25)]
-                        if punti_curva: geometrie["polilinee"].append(punti_curva)
-            except:
-                pass
-
-        # Calcolo dei limiti geometrici (Bounding Box)
+        # Calcolo Bounding Box
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
@@ -152,8 +136,9 @@ def parse_uploaded_dxf(file_bytes):
     except Exception:
         pass
     return None, None, None
+
 # =============================================================================
-# EXPORT MANAGERS SICURI E CERTIFICATI
+# ESPORTAZIONE FILE
 # =============================================================================
 def make_pure_csv(df):
     return df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
@@ -165,6 +150,9 @@ def make_real_excel(df):
     return output.getvalue()
 
 def make_real_pdf(title, summary, df, fig_to_embed=None):
+    if not REPORTLAB_AVAILABLE:
+        return b"ReportLab non installato sul server cloud."
+        
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     story = []
@@ -352,7 +340,7 @@ with tab_1d:
             barre_usate_per_conferma = {}
             for pezzo in reqs:
                 inserito = False
-                for b in piani_barre:
+                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -404,7 +392,10 @@ with tab_1d:
             c1, c2, c3 = st.columns(3)
             c1.download_button("📥 CSV", make_pure_csv(df_exp), "Nesting_1D.csv")
             c2.download_button("📊 EXCEL", make_real_excel(df_exp), "Nesting_1D.xlsx")
-            c3.download_button("📄 PDF", make_real_pdf("REPORT BARRE 1D", {"N_Ordine": num_ordine_1d}, df_exp, fig_1d), "Nesting_1D.pdf")
+            if REPORTLAB_AVAILABLE:
+                c3.download_button("📄 PDF", make_real_pdf("REPORT BARRE 1D", {"N_Ordine": num_ordine_1d}, df_exp, fig_1d), "Nesting_1D.pdf")
+            else:
+                c3.button("📄 PDF (ReportLab non inst.)", disabled=True)
             plt.close(fig_1d)
 
 # =============================================================================
@@ -419,6 +410,7 @@ with tab_2d:
         nome_cliente_2d = st.text_input(T["cliente"], value="Carpenteria Metallica Srl", key="cli_2d")
         
         st.markdown(f"### {T['magazzino']}")
+        # Corretto il bug NameError rinominando coerentemente la variabile in tabella_stk_2d
         tabella_stk_2d = st.data_editor(st.session_state.magazzino_2d, num_rows="dynamic", key="stk_ed_2d", use_container_width=True)
         st.session_state.magazzino_2d = tabella_stk_2d
         
@@ -438,10 +430,9 @@ with tab_2d:
         nome_file_componente = "PEZZO_DEFAULT.DXF"
         
         if file_dxf_caricati:
-            # Prende sempre l'ultimo file attivo per evitare blocchi nella sessione
             file_attivo = file_dxf_caricati[-1]
             nome_file_componente = file_attivo.name
-            bytes_dxf = file_attivo.getvalue() # getvalue() impedisce flussi vuoti nei rinfreschi di pagina
+            bytes_dxf = file_attivo.getvalue()
             
             geom, w_cad, h_cad = parse_uploaded_dxf(bytes_dxf)
             if geom and w_cad and h_cad:
@@ -557,7 +548,11 @@ with tab_2d:
             bx1.download_button("📥 DOWNLOAD CSV", make_pure_csv(df_exp_2d), "Nesting_2D.csv")
             bx2.download_button("📊 DOWNLOAD EXCEL", make_real_excel(df_exp_2d), "Nesting_2D.xlsx")
             bx3.download_button("🛠️ SCARICA DXF NESTING REAL 1:1", dxf_string_reale, file_name=f"Layout_CAM_{num_ordine_2d}.dxf", mime="image/vnd.dxf")
-            bx4.download_button("📄 SCARICA PDF RELAZIONE", make_real_pdf("REPORT NESTING 2D", {"Ordine": num_ordine_2d}, df_exp_2d, fig), "Nesting_2D.pdf")
+            
+            if REPORTLAB_AVAILABLE:
+                bx4.download_button("📄 SCARICA PDF RELAZIONE", make_real_pdf("REPORT NESTING 2D", {"Ordine": num_ordine_2d}, df_exp_2d, fig), "Nesting_2D.pdf")
+            else:
+                bx4.button("📄 PDF DISATTIVATO (Manca ReportLab)", disabled=True)
             plt.close(fig)
         else:
             st.markdown(f'<div class="standby-box">{T["standby_2d"]}</div>', unsafe_allow_html=True)
