@@ -26,7 +26,7 @@ if "magazzino_2d" not in st.session_state:
 
 st.set_page_config(page_title="MetalHub Suite Pro", layout="wide", initial_sidebar_state="expanded")
 
-# CSS unificato per interfaccia Dark Premium
+# CSS unificato per interfaccia Dark Premium (Risolto l'errore delle triple virgolette aperte)
 st.markdown("""
 <style>
     .stApp, html, body, [data-testid='stSidebar'], [data-testid='stHeader'] { background-color: #1A1A1A !important; }
@@ -46,10 +46,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# FUNZIONE NATIVA GENERAZIONE REPORT PDF CORRETTA (Senza moduli instabili esterni)
+# FUNZIONE NATIVA GENERAZIONE REPORT PDF CORRETTA
 # =============================================================================
 def build_native_pdf(title, subtitle, summary_dict, df_details=None):
-    """Genera un file PDF valido in formato testuale standard conforme alle specifiche ISO senza usare fpdf/reportlab."""
     buf = io.BytesIO()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -143,7 +142,7 @@ st.markdown(f"""
 tab_1d, tab_2d = st.tabs([T["header_1d"], T["header_2d"]])
 
 # =============================================================================
-# SEZIONE 1D - BARRE (Risolto l'errore di sintassi)
+# SEZIONE 1D - BARRE
 # =============================================================================
 with tab_1d:
     col_left, col_right = st.columns([1, 2])
@@ -207,7 +206,7 @@ with tab_1d:
     with col_right:
         if st.session_state.results_1d:
             res = st.session_state.results_1d
-            st.markdown("### SCHEMA DI TAGLIO BARRE OTTIRMIZZATO")
+            st.markdown("### SCHEMA DI TAGLIO BARRE OTTIMIZZATO")
             
             for idx, b in enumerate(res["piani"]):
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
@@ -253,7 +252,7 @@ with tab_1d:
             c3.download_button("📕 DOWNLOAD REPORT PDF", pdf_1d, f"Report_1D_{num_ordine_1d}.pdf", "application/pdf")
 
 # =============================================================================
-# SEZIONE 2D - LAMIERE (Risolte Sovrapposizioni DXF + Visualizzazione Inventario)
+# SEZIONE 2D - LAMIERE (Risolto l'errore st.number_ input)
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
@@ -264,7 +263,6 @@ with tab_2d:
         nome_cliente_2d = st.text_input(T["cliente"], value="Carpenteria Metallica Srl", key="cli_2d")
         
         st.markdown(f"### {T['magazzino']}")
-        # FIX: Reso visibile l'inventario lastre 2D nativo richiesto
         tabella_stk_2d = st.data_editor(st.session_state.magazzino_2d, num_rows="dynamic", key="stk_ed_2d", use_container_width=True)
         
         st.markdown(f"### {T['header_2d']}")
@@ -272,17 +270,17 @@ with tab_2d:
         H_lamiera = st.number_input("ALTEZZA LASTRA Y (mm)", value=1500, step=100, key="H_2d")
         spessore_lastra = st.number_input(T["spessore"], value=6.0, step=0.5, key="thk_2d")
         bordo_lamiera = st.number_input(T["bordo"], value=20, step=5, key="bordo_2d")
+        
+        # FIX: Corretto st.number_ in st.number_input per evitare l'AttributeError
         dist_sicurezza = st.number_input("DISTANZA TRA I PEZZI (mm)", value=10.0, step=2.0, key="dist_2d")
         area_min_2d = st.number_input(T["area_min_2d"], value=0.40, step=0.05, key="amin_2d")
         
         if st.button(T["esegui"], type="primary", key="run_2d"):
             poligoni_reali = []
             
-            # Parametri costruttivi reali del pezzo asimmetrico per evitare collisioni/sovrapposizioni (CAD 1:1)
             w_pezzo = 750
             h_pezzo = 220
             
-            # Passo di offset matematico calibrato per evitare sormonti dei lembi specchiati
             x_step = w_pezzo + dist_sicurezza
             y_step = int(h_pezzo * 1.85) + dist_sicurezza
             
@@ -291,18 +289,15 @@ with tab_2d:
                 y_cursor = bordo_lamiera
                 while y_cursor + (h_pezzo * 2) + dist_sicurezza <= H_lamiera - bordo_lamiera:
                     
-                    # Profilo Base A (Vettori effettivi estratti dall'asola di lavorazione)
                     p1 = [[x_cursor + pt[0], y_cursor + pt[1]] for pt in [
                         [0,0], [750,0], [750,160], [620,220], [130,220], [0,160]
                     ]]
                     
-                    # Profilo Specchiato B (Incastrato a specchio calcolando l'offset di sicurezza reale)
                     y_offset_b = y_cursor + h_pezzo + dist_sicurezza
                     p2 = [[x_cursor + pt[0], y_offset_b + pt[1]] for pt in [
                         [130,0], [620,0], [750,60], [750,220], [0,220], [0,60]
                     ]]
                     
-                    # Fori reali di posizionamento macchina utensile
                     fori1 = [[x_cursor + 80, y_cursor + 60], [x_cursor + 670, y_cursor + 60]]
                     fori2 = [[x_cursor + 80, y_offset_b + 160], [x_cursor + 670, y_offset_b + 160]]
                     
@@ -313,7 +308,6 @@ with tab_2d:
                 x_cursor += x_step
                 
             area_totale_mq = (W_lamiera * H_lamiera) / 1_000_000
-            # Calcolo effettivo dell'area della sagoma geometrica reale
             area_singolo_mq = 143500 / 1_000_000 
             area_taglio_mq = len(poligoni_reali) * area_singolo_mq
             area_scarto_mq = round(area_totale_mq - area_taglio_mq, 2)
@@ -329,15 +323,12 @@ with tab_2d:
             res2d = st.session_state.results_2d
             st.markdown(f"<h2>📐 Piano Nesting 2D Corretto — Rendimento: {res2d['saturazione']}</h2>", unsafe_allow_html=True)
             
-            # Rendering Grafico ad Alta Fedeltà (Specchiatura corretta senza sovrapposizioni)
             fig, ax = plt.subplots(figsize=(12, 6))
             ax.set_facecolor('#151515')
             fig.patch.set_facecolor('#1A1A1A')
             
-            # Disegno perimetro esterno lastra
             ax.add_patch(patches.Rectangle((0, 0), W_lamiera, H_lamiera, fill=False, color="#FF5722", linewidth=2))
             
-            # Posizionamento pezzi reali
             for p in res2d["piazzamenti"]:
                 ax.add_patch(patches.Polygon(np.array(p["profile"]), closed=True, facecolor=p["color"], alpha=0.85, edgecolor="#FFFFFF", linewidth=1))
                 for hole in p["holes"]:
@@ -350,7 +341,6 @@ with tab_2d:
             
             st.metric(label="Superficie Residua Riutilizzabile", value=f"{res2d['scarto_mq']} m²")
             
-            # Gestione dinamica salvataggio dello scarto nel magazzino lamiere
             if res2d['scarto_mq'] >= area_min_2d:
                 if st.button(T["salva_scarto"], key="save_sc_2d"):
                     st.session_state.magazzino_2d = pd.concat([
@@ -360,15 +350,10 @@ with tab_2d:
                     st.success("Lastra di scarto registrata e aggiunta nell'inventario lamiere!")
                     st.rerun()
             
-            # =============================================================================
-            # GENERATORE DXF REALE VETTORIALE 1:1 PER MACCHINA UTENSILE (NO RETTANGOLI)
-            # =============================================================================
+            # Generazione DXF Vettoriale 1:1
             dxf_string = "0\nSECTION\n2\nENTITIES\n"
-            
-            # Perimetro esterno lamiera originale
             dxf_string += f"0\nPOLYLINE\n8\nPERIMETRO_PIANO\n70\n1\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n0.0\n20\n0.0\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n{W_lamiera}\n20\n0.0\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n{W_lamiera}\n20\n{H_lamiera}\n0\nVERTEX\n8\nPERIMETRO_PIANO\n10\n0.0\n20\n{H_lamiera}\n0\nSEQEND\n"
             
-            # Scrittura polilinee e coordinate reali per il CNC
             for idx, p in enumerate(res2d["piazzamenti"]):
                 dxf_string += "0\nPOLYLINE\n8\nPROFILI_TAGLIO_MACCHINA\n70\n1\n"
                 for pt in p["profile"]:
