@@ -2,7 +2,7 @@ streamlit
 pandas
 openpyxl
 xlsxwriter
-reportlab
+reportlab==4.1.0
 matplotlib
 shapely
 ezdxf
