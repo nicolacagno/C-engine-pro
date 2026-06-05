@@ -21,7 +21,7 @@ if "1d_confermato" not in st.session_state:
 if "2d_confermato" not in st.session_state:
     st.session_state["2d_confermato"] = False
 
-# Inizializzazione magazzini con la nuova colonna CODICE MATERIALE
+# Inizializzazione magazzini stabili con colonna CODICE MATERIALE
 if "magazzino_1d" not in st.session_state:
     st.session_state.magazzino_1d = pd.DataFrame([
         {"CODICE MATERIALE": "FE360", "LUNGHEZZA (mm)": 6000, "QTY": 10},
@@ -39,7 +39,7 @@ if "pezzi_2d" not in st.session_state:
 
 st.set_page_config(page_title="MetalHub Suite Pro", layout="wide", initial_sidebar_state="expanded")
 
-# CSS Premium Dark Interface
+# CSS Interfaccia Premium Dark
 st.markdown("""
 <style>
     .stApp, html, body, [data-testid='stSidebar'], [data-testid='stHeader'] { background-color: #1A1A1A !important; }
@@ -137,9 +137,9 @@ def generate_industrial_dxf(W, H, piazzamenti):
     return out_stream.getvalue()
 
 # =============================================================================
-# LOGICA DI INTERFACCIA
+# TRADUZIONI LINGUE RIPRISTINATE
 # =============================================================================
-lang = st.sidebar.selectbox("🌐 LINGUA", ["IT", "EN"])
+lang = st.sidebar.selectbox("🌐 LINGUA / LANGUAGE", ["IT", "EN"])
 
 if st.sidebar.button("🔄 RESET GENERAL"):
     st.session_state.results_1d = None
@@ -191,7 +191,7 @@ TXT = {
         "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts."
     }
 }
-T = TXT.get(lang, TXT["IT"])
+T = TXX = TXT.get(lang, TXT["IT"])
 HEX_COLORI = {"1200": "#3B82F6", "850": "#10B981", "340": "#8B5CF6", "default": "#4B5563"}
 
 st.markdown(f"""
@@ -231,7 +231,6 @@ with tab_1d:
         tabella_cut = st.data_editor(df_cut, num_rows="dynamic", key="cut_ed_1d", use_container_width=True)
         
         if st.button(T["esegui"], type="primary", key="run_1d"):
-            # Generazione dizionario magazzino suddiviso per Codici
             stk_struttura = {}
             for _, r in tabella_stk.iterrows():
                 if pd.notnull(r["CODICE MATERIALE"]) and pd.notnull(r["LUNGHEZZA (mm)"]):
@@ -243,9 +242,8 @@ with tab_1d:
 
             piani_barre = []
             scarti_idonei_da_reintegrare = []
-            barre_usate_per_conferma = [] # lista di tuple (codice, lunghezza)
+            barre_usate_per_conferma = []
             
-            # Raggruppa le richieste per codice richiesto
             for _, cut_row in tabella_cut.iterrows():
                 if pd.notnull(cut_row["CODICE RICHIESTO"]) and pd.notnull(cut_row["LUNGHEZZA (mm)"]) and pd.notnull(cut_row["QTY"]):
                     cod_req = str(cut_row["CODICE RICHIESTO"]).strip()
@@ -254,7 +252,6 @@ with tab_1d:
                     
                     for _ in range(qty_pezzo):
                         inserito = False
-                        # Cerca se tra i piani già aperti per QUESTO SPECIFICO CODICE c'è spazio
                         for b in piani_barre:
                             if b["codice"] == cod_req and (lung_pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                                 b["tagli"].append(lung_pezzo)
@@ -262,7 +259,6 @@ with tab_1d:
                                 inserito = True
                                 break
                         
-                        # Se non c'è spazio, preleva una nuova barra adatta dal magazzino per quel codice
                         if not inserito:
                             lunghezza_scelta = 6000
                             sub_stock = stk_struttura.get(cod_req, {})
@@ -296,7 +292,6 @@ with tab_1d:
             if not st.session_state["1d_confermato"]:
                 st.warning("⚠️ SIMULAZIONE MULTI-MATERIALE")
                 if st.button(T["conferma_stock"], key="btn_conf_1d"):
-                    # Logica di scarico/carico reale
                     df_stk_attuale = st.session_state.magazzino_1d.copy()
                     for item in res["scarico"]:
                         idx = df_stk_attuale[(df_stk_attuale["CODICE MATERIALE"] == item["CODICE"]) & (df_stk_attuale["LUNGHEZZA (mm)"] == item["LUNGHEZZA"])].index
@@ -309,6 +304,8 @@ with tab_1d:
                     st.session_state.magazzino_1d = df_stk_attuale
                     st.session_state["1d_confermato"] = True
                     st.rerun()
+            else:
+                st.success(T["stock_applicato"])
             
             for idx, b in enumerate(res["piani"]):
                 sfrido_f = int(b["spazio_rimasto"] + spessore_taglio)
@@ -321,7 +318,7 @@ with tab_1d:
             c2.download_button("📊 SCARICA REPORT EXCEL", make_real_excel(df_exp), "Nesting_Barre_MultiCodice.xlsx")
 
 # =============================================================================
-# SEZIONE 2D - LAMIERE MULTI-CODICE
+# SEZIONE 2D - LAMIERE MULTI-CODICE (FIXED BUG)
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
@@ -332,7 +329,7 @@ with tab_2d:
         
         st.markdown(f"### {T['magazzino']}")
         tabella_stk_2d = st.data_editor(st.session_state.magazzino_2d, num_rows="dynamic", key="stk_ed_2d", use_container_width=True)
-        st.session_state.magazzino_2d = tabella_stk_2d
+        st.session_state.magazzino_2d = tabella_stk_2d  # [FIX] Risolto NameError su questa riga
         
         st.markdown(f"### {T['header_2d']}")
         bordo_lamiera = st.number_input(T["bordo"], value=20, step=5, key="bordo_2d")
@@ -355,8 +352,13 @@ with tab_2d:
             else:
                 st.error("⚠️ Errore lettura geometrica standard. Sagoma generica applicata.")
             
-            # Pre-popoliamo la tabella legando il pezzo al primo codice disponibile in magazzino
-            codice_predefinito = str(tabella_stk_2d.iloc[0]["CODICE MATERIALE"]) if not tabella_stk_2d.empty else "L_FE_6MM"
+            # [FIX SAFE] Estrazione del codice blindata contro i KeyError se la tabella cambia stato
+            codice_predefinito = "L_FE_6MM"
+            if not tabella_stk_2d.empty and "CODICE MATERIALE" in tabella_stk_2d.columns:
+                valore_cella = tabella_stk_2d["CODICE MATERIALE"].values[0]
+                if pd.notnull(valore_cella):
+                    codice_predefinito = str(valore_cella).strip()
+                    
             st.session_state.pezzi_2d = pd.DataFrame([{
                 "NOME PEZZO DXF": nome_file_componente, 
                 "CODICE RICHIESTO": codice_predefinito,
@@ -372,7 +374,6 @@ with tab_2d:
             piani_piazzati = []
             lastre_usate_report = []
             
-            # Eseguiamo il nesting separando per ogni riga/codice inserito dall'utente
             for idx_riga, riga_pezzo in tabella_pezzi_2d.iterrows():
                 if pd.isnull(riga_pezzo["CODICE RICHIESTO"]) or pd.isnull(riga_pezzo["QTY DA PRODURRE"]): continue
                 
@@ -381,18 +382,15 @@ with tab_2d:
                 w_p = float(riga_pezzo["LARGHEZZA (mm)"])
                 h_p = float(riga_pezzo["ALTEZZA (mm)"])
                 
-                # Trova la prima lastra compatibile con questo codice nel magazzino
                 lastra_selezionata = None
                 for _, l_row in tabella_stk_2d.iterrows():
                     if str(l_row["CODICE MATERIALE"]).strip() == cod_mat_richiesto and int(l_row["QTY"]) > 0:
                         lastra_selezionata = l_row
                         break
                 
-                # Se non trova la lastra, usa dimensioni standard di fallback
                 W_l = float(lastra_selezionata["LARGHEZZA X (mm)"]) if lastra_selezionata is not None else 3000.0
                 H_l = float(lastra_selezionata["ALTEZZA Y (mm)"]) if lastra_selezionata is not None else 1500.0
                 
-                # Piazzamento a griglia sulla lastra individuata
                 x_step = w_p + dist_sicurezza
                 y_step = h_p + dist_sicurezza
                 pezzi_messi = 0
@@ -433,7 +431,6 @@ with tab_2d:
             if not st.session_state["2d_confermato"]:
                 st.warning("⚠️ SIMULAZIONE DISPOSIZIONE LAMIERE")
                 if st.button(T["conferma_stock"], key="btn_conf_2d"):
-                    # Scarica reali lamiere
                     df_stk_2d_attuale = st.session_state.magazzino_2d.copy()
                     for l_usata in res2d["report_lastre"]:
                         if l_usata["PEZZI_PRODOTTI"] > 0:
@@ -444,9 +441,8 @@ with tab_2d:
                     st.session_state["2d_confermato"] = True
                     st.rerun()
             else:
-                st.success(T["stock_appllicato"])
+                st.success(T["stock_applicato"])
             
-            # Rappresentazione Grafica di ciascuna lastra elaborata
             for l_rep in res2d["report_lastre"]:
                 st.markdown(f"#### Lastra Codice: **{l_rep['CODICE']}** ({l_rep['W']}x{l_rep['H']} mm) — Piazzati {l_rep['PEZZI_PRODOTTI']}/{l_rep['RICHIESTI']} pezzi")
                 
@@ -454,7 +450,6 @@ with tab_2d:
                 ax.set_facecolor('#0F0F11'); fig.patch.set_facecolor('#1A1A1A')
                 ax.add_patch(patches.Rectangle((0, 0), l_rep['W'], l_rep['H'], fill=False, color="#FF5722", linewidth=2))
                 
-                # Filtra e disegna solo i rettangoli appartenenti a questa specifica lastra/codice
                 for p in res2d["piazzamenti"]:
                     if p["codice"] == l_rep["CODICE"]:
                         tx, ty = p["traslazione"]
