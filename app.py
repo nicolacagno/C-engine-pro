@@ -6,10 +6,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import ezdxf
 
-REPORTLAB_AVAILABLE = False
-
 # =============================================================================
-# STATO DELLA SESSIONE
+# STATO DELLA SESSIONE (ARCHIVIO MATERIALI PERSISTENTE)
 # =============================================================================
 if "results_1d" not in st.session_state:
     st.session_state.results_1d = None
@@ -21,7 +19,6 @@ if "1d_confermato" not in st.session_state:
 if "2d_confermato" not in st.session_state:
     st.session_state["2d_confermato"] = False
 
-# Inizializzazione magazzini stabili con colonna CODICE MATERIALE
 if "magazzino_1d" not in st.session_state:
     st.session_state.magazzino_1d = pd.DataFrame([
         {"CODICE MATERIALE": "FE360", "LUNGHEZZA (mm)": 6000, "QTY": 10},
@@ -49,7 +46,6 @@ st.markdown("""
     
     .stButton>button, .stDownloadButton>button { color: #FFFFFF !important; background-color: #FF5722 !important; font-weight: bold !important; width: 100% !important; border: none !important; border-radius: 4px !important; padding: 0.6rem 1rem !important; font-size: 13px !important; text-transform: uppercase !important; }
     .stButton>button:hover, .stDownloadButton>button:hover { background-color: #E64A19 !important; color: #FFFFFF !important; }
-    .standby-box { border: 2px dashed #404040; border-radius: 8px; padding: 60px 20px; text-align: center; background-color: #1F1F1F; color: #666666 !important; font-weight: 500; margin-top: 15px; }
     
     .bar-container { background-color: #262626; border: 1px solid #404040; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
     .bar-header { display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; margin-bottom: 8px; }
@@ -109,7 +105,7 @@ def parse_uploaded_dxf(file_bytes):
     return None, None, None
 
 # =============================================================================
-# ESPORTAZIONE FILE
+# FUNZIONI DI ESPORTAZIONE (FORMATI MULTIPLI)
 # =============================================================================
 def make_pure_csv(df):
     return df.to_csv(index=False, sep=';', encoding='utf-8-sig').encode('utf-8-sig')
@@ -120,21 +116,55 @@ def make_real_excel(df):
         df.to_excel(writer, index=False, sheet_name='Nesting_Report')
     return output.getvalue()
 
-def generate_industrial_dxf(W, H, piazzamenti):
-    doc = ezdxf.new('R2010')
-    msp = doc.modelspace()
-    doc.layers.new(name='PERIMETRO_LASTRA', dxfattribs={'color': 1}) 
-    doc.layers.new(name='PROFILI_TAGLIO', dxfattribs={'color': 3})   
-    msp.add_lwpolyline([(0, 0), (W, 0), (W, H), (0, H)], dxfattribs={'layer': 'PERIMETRO_LASTRA', 'flags': 1})
+def generate_pdf_report_1d(piani, n_ord, cliente):
+    """Genera un PDF grafico vettoriale pulito per le barre 1D usando Matplotlib"""
+    fig, ax = plt.subplots(figsize=(8.5, 11))
+    ax.axis('off')
     
-    for p in piazzamenti:
-        tx, ty = p["traslazione"]
-        p_box = [(pt[0] + tx, pt[1] + ty) for pt in [[0,0], [p["dim_w"],0], [p["dim_w"],p["dim_h"]], [0,p["dim_h"]]]]
-        msp.add_lwpolyline(p_box, dxfattribs={'layer': 'PROFILI_TAGLIO', 'flags': 1})
-                
-    out_stream = io.StringIO()
-    doc.write(out_stream)
-    return out_stream.getvalue()
+    testo_header = f"REPORT DI PRODUZIONE - NESTING BARRE 1D\nOrdine: {n_ord} | Cliente: {cliente}\n\n"
+    for i, b in enumerate(piani):
+        sfrido = int(b["spazio_rimasto"])
+        testo_header += f"BARRA {i+1} [Materiale: {b['codice']}] (Tot: {b['lunghezza_totale']}mm)\n"
+        testo_header += f" -> Tagli: {', '.join(map(str, b['tagli']))} mm\n"
+        testo_header += f" -> Sfrido residuo: {sfrido} mm\n\n"
+        
+    plt.text(0.05, 0.95, testo_header, transform=ax.transAxes, fontsize=10, fontfamily='sans-serif', va='top', ha='left')
+    buf = io.BytesIO()
+    plt.savefig(buf, format='pdf', bbox_inches='tight')
+    plt.close(fig)
+    return buf.getvalue()
+
+def generate_pdf_report_2d(report_lastre, piazzamenti, n_ord, cliente):
+    """Genera un PDF multipagina contenente i layout grafici reali delle lamiere 2D"""
+    buf = io.BytesIO()
+    from matplotlib.backends.backend_pdf import PdfPages
+    
+    with PdfPages(buf) as pdf:
+        for l_rep in report_lastre:
+            fig, ax = plt.subplots(figsize=(11, 8.5))
+            ax.set_facecolor('#FFFFFF')
+            
+            # Perimetro lastra
+            ax.add_patch(patches.Rectangle((0, 0), l_rep['W'], l_rep['H'], fill=False, color="#FF5722", linewidth=2))
+            
+            # Disegno dei pezzi piazzati
+            for p in piazzamenti:
+                if p["codice"] == l_rep["CODICE"]:
+                    tx, ty = p["traslazione"]
+                    ax.add_patch(patches.Rectangle((tx, ty), p["dim_w"], p["dim_h"], facecolor="#1E3A8A", edgecolor="#000000", alpha=0.5))
+                    ax.text(tx + p["dim_w"]/2, ty + p["dim_h"]/2, p["id"].split('-')[-1], color="black", fontsize=8, ha='center', va='center')
+            
+            ax.set_xlim(-100, l_rep['W'] + 100)
+            ax.set_ylim(-100, l_rep['H'] + 100)
+            ax.set_aspect('equal')
+            ax.set_title(f"COMMESSA: {n_ord} | CLIENTE: {cliente}\nLastra Codice: {l_rep['CODICE']} ({l_rep['W']}x{l_rep['H']} mm) - Piazzati: {l_rep['PEZZI_PRODOTTI']}/{l_rep['RICHIESTI']}", fontsize=12, fontweight='bold')
+            ax.axis('on')
+            ax.grid(True, linestyle='--', alpha=0.5)
+            
+            pdf.savefig(fig, bbox_inches='tight')
+            plt.close(fig)
+            
+    return buf.getvalue()
 
 # =============================================================================
 # TRADUZIONI LINGUE RIPRISTINATE
@@ -158,17 +188,13 @@ TXT = {
         "ordine": "NUMERO ORDINE",
         "cliente": "NOME CLIENTE",
         "parametri_macchina": "🔧 PARAMETRI MACCHINA",
-        "magazzino": "📦 INVENTARIO IN MAGAZZINO (CON CODICE)",
-        "tagli": "✂️ LISTA TAGLI RICHIESTI",
+        "magazzino": "📦 ARCHIVIO MATERIALI DISPONIBILI (INVENTARIO)",
+        "tagli": "✂️ LISTA TAGLI RICHIESTI (INSERISCI CODICE DA SCALARE)",
         "esegui": "🚀 ELABORA ED ESAMINA SOLUZIONE (SIMULAZIONE)",
-        "conferma_stock": "✅ CONFERMA E APPLICA A MAGAZZINO REALE",
-        "stock_applicato": "💥 Magazzino aggiornato con successo!",
-        "spessore": "SPESSORE LASTRA (mm)",
+        "conferma_stock": "✅ CONFERMA E SCALA DA ARCHIVIO REALE",
+        "stock_applicato": "💥 Archivio magazzino aggiornato e scalato con successo!",
         "bordo": "BORDO PERIMETRALE (mm)",
-        "esporta": "💾 ESPORTA DATI DI PRODUZIONE",
-        "scarto_min_1d": "SPEZZONE MINIMO REINTEGRO (mm)",
-        "area_min_2d": "AREA MINIMA RIUTILIZZO (m²)",
-        "standby_2d": "IN ATTESA DI CARICAMENTO DXF REALE\n\nInserisci i file geometrici .dxf reali per leggerne la geometria nativa."
+        "scarto_min_1d": "SPEZZONE MINIMO REINTEGRO (mm)"
     },
     "EN": {
         "title": "Multi-Code Nesting Engine",
@@ -178,20 +204,16 @@ TXT = {
         "ordine": "ORDER NUMBER",
         "cliente": "CUSTOMER NAME",
         "parametri_macchina": "🔧 MACHINE PARAMETERS",
-        "magazzino": "📦 STOCK INVENTORY (WITH CODE)",
-        "tagli": "✂️ CUT LIST",
+        "magazzino": "📦 AVAILABLE MATERIALS ARCHIVE (INVENTORY)",
+        "tagli": "✂️ CUT LIST (ENTER CODE TO SUBTRACT)",
         "esegui": "🚀 COMPUTE & REVIEW LAYOUT (SIMULATION)",
-        "conferma_stock": "✅ CONFIRM & SUBTRACT FROM REAL STOCK",
-        "stock_applicato": "💥 Inventory updated successfully!",
-        "spessore": "SHEET THICKNESS (mm)",
+        "conferma_stock": "✅ CONFIRM & SUBTRACT FROM STOCK ARCHIVE",
+        "stock_applicato": "💥 Stock archive successfully updated and subtracted!",
         "bordo": "PERIMETER MARGIN (mm)",
-        "esporta": "💾 EXPORT PRODUCTION DATA",
-        "scarto_min_1d": "MINIMUM REUSABLE LENGTH (mm)",
-        "area_min_2d": "MINIMUM REUSABLE AREA (m²)",
-        "standby_2d": "AWAITING DXF FILES\n\nUpload your .dxf engineering parts."
+        "scarto_min_1d": "MINIMUM REUSABLE LENGTH (mm)"
     }
 }
-T = TXX = TXT.get(lang, TXT["IT"])
+T = TXT.get(lang, TXT["IT"])
 HEX_COLORI = {"1200": "#3B82F6", "850": "#10B981", "340": "#8B5CF6", "default": "#4B5563"}
 
 st.markdown(f"""
@@ -252,7 +274,7 @@ with tab_1d:
                     
                     for _ in range(qty_pezzo):
                         inserito = False
-                        for b in piani_barre:
+                        for b in pianos_barre := piani_barre:
                             if b["codice"] == cod_req and (lung_pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                                 b["tagli"].append(lung_pezzo)
                                 b["spazio_rimasto"] -= (lung_pezzo + spessore_taglio)
@@ -260,7 +282,6 @@ with tab_1d:
                                 break
                         
                         if not inserito:
-                            lunghezza_scelta = 6000
                             sub_stock = stk_struttura.get(cod_req, {})
                             disponibili = [l for l, q in sub_stock.items() if q > 0]
                             
@@ -268,6 +289,8 @@ with tab_1d:
                                 disponibili.sort()
                                 lunghezza_scelta = disponibili[0]
                                 stk_struttura[cod_req][lunghezza_scelta] -= 1
+                            else:
+                                lunghezza_scelta = 6000
                             
                             barre_usate_per_conferma.append({"CODICE": cod_req, "LUNGHEZZA": lunghezza_scelta})
                             piani_barre.append({
@@ -290,17 +313,15 @@ with tab_1d:
         if st.session_state.results_1d:
             res = st.session_state.results_1d
             if not st.session_state["1d_confermato"]:
-                st.warning("⚠️ SIMULAZIONE MULTI-MATERIALE")
+                st.warning("⚠️ SIMULAZIONE CALCOLATA - DA CONFERMARE")
                 if st.button(T["conferma_stock"], key="btn_conf_1d"):
                     df_stk_attuale = st.session_state.magazzino_1d.copy()
                     for item in res["scarico"]:
                         idx = df_stk_attuale[(df_stk_attuale["CODICE MATERIALE"] == item["CODICE"]) & (df_stk_attuale["LUNGHEZZA (mm)"] == item["LUNGHEZZA"])].index
                         if len(idx) > 0:
                             df_stk_attuale.loc[idx[0], "QTY"] = max(0, df_stk_attuale.loc[idx[0], "QTY"] - 1)
-                    
                     if res["scarti"]:
                         df_stk_attuale = pd.concat([df_stk_attuale, pd.DataFrame(res["scarti"])], ignore_index=True)
-                    
                     st.session_state.magazzino_1d = df_stk_attuale
                     st.session_state["1d_confermato"] = True
                     st.rerun()
@@ -313,12 +334,15 @@ with tab_1d:
                 st.markdown(f'<div class="bar-container"><div class="bar-header"><div>[ {b["codice"]} ] BARRA {idx+1} ({b["lunghezza_totale"]}mm)</div><div>SFRIDO: {sfrido_f}mm</div></div><div class="bar-track">{html_segmenti}</div></div>', unsafe_allow_html=True)
             
             df_exp = pd.DataFrame([{"ID_Barra": f"BAR-{i+1}", "Codice_Materiale": b["codice"], "Lunghezza_Totale_mm": b["lunghezza_totale"], "Sequenza_Tagli": "-".join(map(str, b["tagli"])), "Sfrido_Residuo_mm": int(b["spazio_rimasto"]+spessore_taglio)} for i, b in enumerate(res["piani"])])
-            c1, c2 = st.columns(2)
-            c1.download_button("📥 SCARICA REPORT CSV", make_pure_csv(df_exp), "Nesting_Barre_MultiCodice.csv")
-            c2.download_button("📊 SCARICA REPORT EXCEL", make_real_excel(df_exp), "Nesting_Barre_MultiCodice.xlsx")
+            
+            st.markdown("#### 💾 ESPORTAZIONE DATI 1D")
+            c1, c2, c3 = st.columns(3)
+            c1.download_button("📥 ESPORTA CSV", make_pure_csv(df_exp), "Nesting_Barre.csv", key="csv_1d")
+            c2.download_button("📊 ESPORTA EXCEL", make_real_excel(df_exp), "Nesting_Barre.xlsx", key="xls_1d")
+            c3.download_button("📕 ESPORTA PDF", generate_pdf_report_1d(res["piani"], num_ordine_1d, nome_cliente_1d), "Report_Taglio_Barre.pdf", key="pdf_1d")
 
 # =============================================================================
-# SEZIONE 2D - LAMIERE MULTI-CODICE (FIXED BUG)
+# SEZIONE 2D - LAMIERE MULTI-CODICE
 # =============================================================================
 with tab_2d:
     col2_left, col2_right = st.columns([1, 2])
@@ -329,7 +353,7 @@ with tab_2d:
         
         st.markdown(f"### {T['magazzino']}")
         tabella_stk_2d = st.data_editor(st.session_state.magazzino_2d, num_rows="dynamic", key="stk_ed_2d", use_container_width=True)
-        st.session_state.magazzino_2d = tabella_stk_2d  # [FIX] Risolto NameError su questa riga
+        st.session_state.magazzino_2d = tabella_stk_2d
         
         st.markdown(f"### {T['header_2d']}")
         bordo_lamiera = st.number_input(T["bordo"], value=20, step=5, key="bordo_2d")
@@ -349,15 +373,11 @@ with tab_2d:
             if w_cad and h_cad:
                 w_rilevata, h_rilevata = w_cad, h_cad
                 st.success(f"✔️ Geometria DXF Rilevata: {w_rilevata} x {h_rilevata} mm")
-            else:
-                st.error("⚠️ Errore lettura geometrica standard. Sagoma generica applicata.")
             
-            # [FIX SAFE] Estrazione del codice blindata contro i KeyError se la tabella cambia stato
             codice_predefinito = "L_FE_6MM"
             if not tabella_stk_2d.empty and "CODICE MATERIALE" in tabella_stk_2d.columns:
                 valore_cella = tabella_stk_2d["CODICE MATERIALE"].values[0]
-                if pd.notnull(valore_cella):
-                    codice_predefinito = str(valore_cella).strip()
+                if pd.notnull(valore_cella): codice_predefinito = str(valore_cella).strip()
                     
             st.session_state.pezzi_2d = pd.DataFrame([{
                 "NOME PEZZO DXF": nome_file_componente, 
@@ -406,8 +426,7 @@ with tab_2d:
                             "dim_w": w_p,
                             "dim_h": h_p,
                             "W_lastra": W_l,
-                            "H_lastra": H_l,
-                            "color": "#1E3A8A" if "FE" in cod_mat_richiesto else "#065F46"
+                            "H_lastra": H_l
                         })
                         pezzi_messi += 1
                         y_cursor += y_step
@@ -420,7 +439,7 @@ with tab_2d:
                     "RICHIESTI": qty_da_fare
                 })
             
-            st.session_state.results_2d = {"piazzamenti": piani_piazzati, "report_lastre": lastre_usate_report}
+            st.session_state.results_2d = {"piazzamenti": pianos_piazzati := piani_piazzati, "report_lastre": lastre_usate_report}
             st.session_state["2d_confermato"] = False
             st.rerun()
 
@@ -429,7 +448,7 @@ with tab_2d:
             res2d = st.session_state.results_2d
             
             if not st.session_state["2d_confermato"]:
-                st.warning("⚠️ SIMULAZIONE DISPOSIZIONE LAMIERE")
+                st.warning("⚠️ SIMULAZIONE CALCOLATA - DA CONFERMARE")
                 if st.button(T["conferma_stock"], key="btn_conf_2d"):
                     df_stk_2d_attuale = st.session_state.magazzino_2d.copy()
                     for l_usata in res2d["report_lastre"]:
@@ -443,8 +462,9 @@ with tab_2d:
             else:
                 st.success(T["stock_applicato"])
             
+            # Rendering a schermo dei grafici lamiere
             for l_rep in res2d["report_lastre"]:
-                st.markdown(f"#### Lastra Codice: **{l_rep['CODICE']}** ({l_rep['W']}x{l_rep['H']} mm) — Piazzati {l_rep['PEZZI_PRODOTTI']}/{l_rep['RICHIESTI']} pezzi")
+                st.markdown(f"#### Lastra Codice: **{l_rep['CODICE']}** ({l_rep['W']}x{l_rep['H']} mm)")
                 
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.set_facecolor('#0F0F11'); fig.patch.set_facecolor('#1A1A1A')
@@ -453,10 +473,28 @@ with tab_2d:
                 for p in res2d["piazzamenti"]:
                     if p["codice"] == l_rep["CODICE"]:
                         tx, ty = p["traslazione"]
-                        ax.add_patch(patches.Rectangle((tx, ty), p["dim_w"], p["dim_h"], facecolor=p["color"], edgecolor="#FFF", alpha=0.7))
+                        ax.add_patch(patches.Rectangle((tx, ty), p["dim_w"], p["dim_h"], facecolor="#1E3A8A", edgecolor="#FFF", alpha=0.7))
                         ax.text(tx + p["dim_w"]/2, ty + p["dim_h"]/2, p["id"].split('-')[-1], color="white", fontsize=8, ha='center', va='center')
                 
                 ax.set_xlim(-50, l_rep['W'] + 50); ax.set_ylim(-50, l_rep['H'] + 50)
                 ax.set_aspect('equal'); ax.axis('off')
                 st.pyplot(fig)
                 plt.close(fig)
+            
+            # Tabella Dati per Export Lamiere
+            df_exp_2d = pd.DataFrame([
+                {
+                    "ID_Piazzamento": p["id"],
+                    "Codice_Lastra": p["codice"],
+                    "X_Inizio_mm": round(p["traslazione"][0], 1),
+                    "Y_Inizio_mm": round(p["traslazione"][1], 1),
+                    "Larghezza_Pezzo_mm": p["dim_w"],
+                    "Altezza_Pezzo_mm": p["dim_h"]
+                } for p in res2d["piazzamenti"]
+            ])
+            
+            st.markdown("#### 💾 ESPORTAZIONE DATI 2D")
+            c2_1, c2_2, c2_3 = st.columns(3)
+            c2_1.download_button("📥 ESPORTA CSV", make_pure_csv(df_exp_2d), "Nesting_Lamiere.csv", key="csv_2d")
+            c2_2.download_button("📊 ESPORTA EXCEL", make_real_excel(df_exp_2d), "Nesting_Lamiere.xlsx", key="xls_2d")
+            c2_3.download_button("📕 ESPORTA PDF GRAFICO", generate_pdf_report_2d(res2d["report_lastre"], res2d["piazzamenti"], num_ordine_2d, nome_cliente_2d), "Report_Grafico_Lamiere.pdf", key="pdf_2d")
