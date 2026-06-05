@@ -63,12 +63,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =============================================================================
-# PARSER GEOMETRICO AVANZATO E INTERPRETE INDUSTRIAL DXF v2
+# PARSER GEOMETRICO AVANZATO E INTERPRETE INDUSTRIAL DXF v3
 # =============================================================================
 def parse_uploaded_dxf(file_bytes):
     """Estrae geometrie da DXF ASCII, Binari, con supporto completo a LINE, CIRCLE, ARC, SPLINE e BLOCCHI."""
     try:
-        # Tenta la decodifica testuale o binaria
         try:
             stream = io.StringIO(file_bytes.decode('utf-8', errors='ignore'))
             doc = ezdxf.read(stream)
@@ -87,7 +86,7 @@ def parse_uploaded_dxf(file_bytes):
             for e in spazio.query('CIRCLE'):
                 geometrie["cerchi"].append({"center": (e.dxf.center.x, e.dxf.center.y), "radius": e.dxf.radius})
             
-            # Polilinee aperte o chiuse
+            # Polilinee standard
             for e in spazio.query('LWPOLYLINE POLYLINE'):
                 try:
                     punti = [(pt[0], pt[1]) for pt in e.get_points(format='xy')]
@@ -95,7 +94,7 @@ def parse_uploaded_dxf(file_bytes):
                 except:
                     pass
             
-            # Curve complesse, spline e archi (Convertiti in segmenti)
+            # Archi, Spline ed Ellissi (Vengono convertiti in segmenti)
             for e in spazio.query('ARC SPLINE ELLIPSE'):
                 try:
                     punti_curva = [(v.x, v.y) for v in e.flattening(distance=0.2)]
@@ -103,10 +102,10 @@ def parse_uploaded_dxf(file_bytes):
                 except:
                     pass
 
-        # 1. Estrai dallo spazio principale (Modelspace)
+        # 1. Estrazione elementi dallo spazio modello principale
         estrai_entita(msp)
         
-        # 2. Esplodi virtualmente i Blocchi raggruppati (INSERT)
+        # 2. Estrazione ed esplosione dei Blocchi Interni (INSERT)
         for insert in msp.query('INSERT'):
             try:
                 for e in insert.virtual_entities():
@@ -123,7 +122,7 @@ def parse_uploaded_dxf(file_bytes):
             except:
                 pass
 
-        # 3. Calcolo dei limiti geometrici del pezzo (Bounding Box)
+        # Calcolo Bounding Box complessivo
         all_x, all_y = [], []
         for l in geometrie["linee"]:
             all_x.extend([l[0][0], l[1][0]])
@@ -348,7 +347,7 @@ with tab_1d:
             barre_usate_per_conferma = {}
             for pezzo in reqs:
                 inserito = False
-                for b in pianos_barre if 'pianos_barre' in locals() else piani_barre:
+                for b in piani_barre:
                     if (pezzo + spessore_taglio) <= b["spazio_rimasto"]:
                         b["tagli"].append(pezzo)
                         b["spazio_rimasto"] -= (pezzo + spessore_taglio)
@@ -434,9 +433,10 @@ with tab_2d:
         nome_file_componente = "PEZZO_DEFAULT.DXF"
         
         if file_dxf_caricati:
-            file_attivo = file_dxf_caricati[0]
+            # Prende sempre l'ultimo file attivo per evitare blocchi nella sessione
+            file_attivo = file_dxf_caricati[-1]
             nome_file_componente = file_attivo.name
-            bytes_dxf = file_attivo.read()
+            bytes_dxf = file_attivo.getvalue() # getvalue() impedisce flussi vuoti nei rinfreschi di pagina
             
             geom, w_cad, h_cad = parse_uploaded_dxf(bytes_dxf)
             if geom and w_cad and h_cad:
